@@ -80,6 +80,8 @@ class SecurityConfig {
     fun defaultSecurityFilterChain(http: HttpSecurity): SecurityFilterChain =
         http
             .securityMatcher("/api/**", "/auth/**")
+            // 无状态 JWT API：禁用 CSRF（POST 登录等不需要表单 CSRF token）
+            .csrf { it.disable() }
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers("/auth/login").permitAll()

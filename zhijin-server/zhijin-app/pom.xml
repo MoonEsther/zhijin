@@ -29,6 +29,12 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Kotlin data class JSON 绑定：Boot 4 用 Jackson 3(tools.jackson)，需 Jackson 3 版 kotlin 模块 -->
+    <dependency>
+      <groupId>tools.jackson.module</groupId>
+      <artifactId>jackson-module-kotlin</artifactId>
+      <version>3.0.2</version>
+    </dependency>
     <!-- Spring Boot 4：MockMvc 自动装配(AutoConfigureMockMvc)拆分到 spring-boot-webmvc-test -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

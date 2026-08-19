@@ -13,7 +13,9 @@ import org.springframework.security.config.annotation.web.configurers.oauth2.ser
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher
+import com.zhijin.auth.web.JwtTenantFilter
 
 /**
  * 安全配置：
@@ -58,6 +60,7 @@ class SecurityConfig {
                     .anyRequest().authenticated()
             }
             .oauth2ResourceServer { it.jwt(Customizer.withDefaults()) }
+            .addFilterAfter(JwtTenantFilter(), UsernamePasswordAuthenticationFilter::class.java)
             .build()
 
     // ---------- 授权服务器设置：issuer 从 AUTH_ISSUER 环境变量解析（默认 localhost:8080） ----------

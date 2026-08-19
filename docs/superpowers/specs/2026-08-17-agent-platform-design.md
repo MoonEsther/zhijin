@@ -75,13 +75,17 @@ MCP（接入协议，连接外部工具生态）
                 │                              │
                 ▼                              ▼
       ┌──────────────────┐          ┌──────────────────┐
-      │ PostgreSQL +      │          │ MinIO(对象存储)   │
-      │ pgvector(向量)    │          │ 文档/附件/S3 兼容  │
-      │ + Redis(会话/缓存) │          └──────────────────┘
-      └──────────────────┘
+      │ PostgreSQL        │          │ Milvus(向量数据库) │
+      │ + Redis(会话/缓存) │          │ (AI 服务直连)     │
+      └──────────────────┘          └──────────────────┘
             │
             ▼
       Redis Streams（异步任务：文档解析、评测跑批）
+
+      ┌──────────────────┐
+      │ MinIO(对象存储)   │
+      │ 文档/附件/S3 兼容 │
+      └──────────────────┘
 ```
 
 - **编排引擎放平台服务（Kotlin）**，Python 只承担 AI 重计算（模型网关、向量化、文档解析、评测跑批）。
@@ -95,7 +99,7 @@ MCP（接入协议，连接外部工具生态）
 | AI 服务 | Python 3.11 + FastAPI | LangChain 仅作工具库，不强依赖框架 |
 | 注册/配置中心 | **Nacos** | 服务发现 + 配置中心 |
 | 主库 | PostgreSQL 16 | SaaS/私有化均友好 |
-| 向量库 | **pgvector**（内嵌 PG） | 私有化交付最省事；向量接口抽象，数据量大再换 Milvus |
+| 向量库 | **Milvus** | 专用向量库，检索性能好、可横向扩展；私有化交付部署 Milvus Standalone（Docker Compose），SaaS 端可用 Zilliz Cloud 托管，开发阶段可用 Milvus Lite；向量访问接口抽象，保留切换弹性 |
 | 缓存/会话 | Redis 7 | 会话、限流、热点缓存 |
 | 对象存储 | MinIO（S3 兼容） | 私有化自托管；公有云可切厂商 OSS/S3 |
 | 异步任务 | 先 Redis Streams | 支撑 V1；量大了再上 RocketMQ/RabbitMQ |
@@ -253,7 +257,7 @@ zhijin-ai/
 | 数据 | 所在库 | 谁直接连 | 谁通过 API 访问 |
 |---|---|---|---|
 | 平台业务数据（租户/应用/会话/账单/审计） | PG `platform` schema | 平台服务(Kotlin) | AI 服务（不直连） |
-| AI 数据（向量表/知识库索引） | PG `ai_kb` schema | **AI 服务直连** | 平台服务（调 AI API） |
+| AI 数据（向量 / 知识库索引） | **Milvus**（向量）+ PG `ai_kb` schema（知识库元数据） | **AI 服务直连** | 平台服务（调 AI API） |
 | 缓存/流/限流 | Redis | 各自用各自 key 前缀 | — |
 
 - 模型供应商 Key 由平台服务持有并加密存储，调用时下发给 AI 服务（AI 服务不落盘 Key）。❓Key 管理方式待最终确认。
@@ -264,7 +268,7 @@ zhijin-ai/
 - **租户识别**：
   - 管理端：登录用户的 JWT 内携带租户信息；
   - 客户系统：调用开放 API 用 API Key，Key 与租户绑定。
-- **隔离覆盖范围**：PostgreSQL `platform` schema 全部业务表；Redis key 前缀 `tenant:{id}:`；Python 侧 `ai_kb` 向量数据同样带 `tenant_id`。
+- **隔离覆盖范围**：PostgreSQL `platform` schema 全部业务表；Redis key 前缀 `tenant:{id}:`；Milvus 向量数据带 `tenant_id` 字段（分区隔离），`ai_kb` 元数据同样带 `tenant_id`。
 - **增强项（V3）**：对高安全/合规要求的租户，提供独立 schema 或独立实例（物理隔离）作为可选能力。
 
 ## 10. 关键数据流 ✅已确认
@@ -345,7 +349,7 @@ zhijin-ai/
 | 4 | 服务数：2 个（平台服务 Kotlin + AI 服务 Python），不拆微服务网格 |
 | 5 | 后端语言：**Kotlin** + Spring Boot 3 + Spring Cloud Alibaba（Nacos） |
 | 6 | AI 服务：Python 3.11 + FastAPI |
-| 7 | 存储：PostgreSQL 16 + pgvector、Redis 7、MinIO、Redis Streams |
+| 7 | 存储：PostgreSQL 16、Milvus（向量库）、Redis 7、MinIO、Redis Streams |
 | 8 | 前端：React + antd（控制台）；Widget 不做，V1 只做开放 API |
 | 9 | 编排引擎在平台服务内，执行器注册表 + 调度器设计 |
 | 10 | 数据访问：谁拥有 schema 谁直连库，platform→Kotlin、ai_kb→Python |

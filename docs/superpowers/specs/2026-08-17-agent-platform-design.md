@@ -143,7 +143,7 @@ MCP（接入协议，连接外部工具生态）
 | 对象存储 | **MinIO**（S3 兼容接口） | 代码统一走 AWS S3 SDK（S3 协议），不依赖 MinIO 私有 API；私有化默认 MinIO，公有云可平滑切换阿里 OSS / 腾讯 COS / AWS S3，无需改代码 |
 | 异步任务 | 先 Redis Streams | 支撑 V1；量大了再上 RocketMQ/RabbitMQ |
 | 前端 | React + **TypeScript** + **antd**（控制台） | 全程 TS 严格模式；Widget 已砍掉，V1 聊天只做开放 API |
-| 部署形态 | **Docker Compose 部署（先行）** | 本平台中间件（Redis/ES/Nacos）+ 两个服务用 docker-compose 编排；**PostgreSQL 与 MinIO 由既有基础设施提供**（不编排，服务经环境变量连接）；私有化交付同套方案；后续按需扩展 K8s |
+| 部署形态 | **Docker Compose 部署（先行）** | **全部中间件（PostgreSQL / Redis / ES / Nacos / MinIO）由既有基础设施提供**（不编排）；docker-compose 仅编排平台两个服务；服务经环境变量/Nacos 连接外部设施；私有化交付同套方案；后续按需扩展 K8s |
 
 ## 5. 仓库结构（monorepo）✅已确认
 
@@ -520,7 +520,7 @@ zhijin-ai/
 | 25 | 工程红线：平台开发**绝对遵守七大编程原则**（单一职责/开闭/里氏替换/接口隔离/依赖倒置/迪米特/合成复用）；所有扩展点收敛为「注册表 + 适配器 + 组件抽象」，保证可扩展性（见 §12.1） |
 | 26 | 前端使用 **TypeScript**（全程 strict 模式），React + TS + antd；不使用 JS |
 | 27 | Python 依赖管理使用 **uv**（pyproject.toml + uv.lock + `uv sync` / `uv run`） |
-| 28 | 部署边界：PostgreSQL 与 MinIO 由**既有基础设施**提供（不纳入 docker-compose），服务经环境变量连接；docker-compose 仅编排 Redis / ES / Nacos 与本平台服务 |
+| 28 | 部署边界：**全部中间件（PostgreSQL / Redis / Elasticsearch / Nacos / MinIO）由既有基础设施提供**（不纳入 docker-compose），服务经环境变量/Nacos 连接；docker-compose 仅编排平台两个服务 |
 
 ## 14. 开放问题 ✅ 已全部确认
 

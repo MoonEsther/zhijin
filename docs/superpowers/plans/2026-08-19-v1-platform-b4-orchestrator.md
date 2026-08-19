@@ -1261,3 +1261,17 @@ git commit -m "docs(plans): B4 追加执行修正记录"
 ## 执行交接
 
 B4 完成后 → **B5 会话运行时 + AI-client**（zhijin-chat + zhijin-ai-client：会话管理 + SSE 流式 + 记忆 + 调 Python），届时 `StubModelComponent` 换成真实 HTTP 实现，编排引擎接入会话层。
+
+---
+
+## 执行修正记录（2026-08-19 实现期间的真实发现，均已落地并验证）
+
+| # | 修正 | 原因 |
+|---|---|---|
+| 1 | `JsonNode.fields()` → `properties()` | Jackson 3 API 变更（`tools.jackson`），`fields()` 不存在 |
+| 2 | `kotlinx-coroutines-test` 版本 | 根构件 1.8.0 但 Boot BOM 将 JVM 实现覆盖为 1.10.2（良性，运行时自洽） |
+| 3 | `assertThrows` 无法包裹 suspend → 测试用 runTest 内 try/catch | JUnit `assertThrows` lambda 非协程，`NodeExecutor.invoke` 是 suspend |
+| 4 | IfNode 对非布尔 condition 静默走 else | V1 接受；后续若需区分"未求值"与"false"再严格化 |
+| 5 | Jackson 3 `asText` 弃用警告 | 非阻塞，后续可换 `asString`/`stringValue` |
+
+> **验收结论**：6 种 V1 节点（Start/End/Variable/If/LLM/Tool）每种独立 TDD + 端到端集成测试，模块 16 测试全绿；端到端 Start→Variable→If→LLM→End 一次通过（拓扑排序 + 变量传递正确，产出 "AI回复"）。

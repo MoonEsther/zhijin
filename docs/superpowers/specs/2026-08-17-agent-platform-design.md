@@ -365,7 +365,7 @@ zhijin-ai/
 │   ├── config.py            ← 配置（从 Nacos 拉取）
 │   ├── gateway/             ← ★ 模型网关
 │   │   ├── routes.py        ← OpenAI 兼容: /v1/chat/completions、/v1/embeddings
-│   │   ├── providers/       ← 供应商适配器: openai / anthropic / qwen / local
+│   │   ├── providers/       ← 供应商适配器: openai / anthropic / qwen / deepseek（本地 Ollama-vLLM 留 V2）
 │   │   └── routing.py       ← 模型路由、切换、超时/重试策略
 │   ├── rag/                 ← RAG: parse.py(解析) / chunk.py(分块)
 │   │                        ←      embed.py(向量化) / retrieve.py(混合检索+重排)
@@ -499,10 +499,9 @@ zhijin-ai/
 | 19 | 全面参考 Coze Studio 架构基线：平台模块划分、引擎内部结构、节点模型、会话运行模型完整对齐（仅 Go → Kotlin）；自研等价 Eino 的图运行时，不引入 Go 库 |
 | 20 | 节点集对齐 Coze Studio：开始/结束/LLM/工具/分支/变量/数据库/代码/知识检索/Agent/迭代/意图/消息/图片生成；「循环在节点内」即 Coze 的 LLM canContinue + Batch/Loop 节点 |
 | 21 | 模型供应商 Key：平台服务持有并在数据库加密存储（AES-256-GCM），每次调用直接从数据库查询、解密后透传给 AI 服务；AI 服务不落盘、不缓存 Key，V1 不引入独立 Key 管理服务/KMS |
+| 22 | 首发模型供应商：**qwen / claude / openai / deepseek**；本地 Ollama-vLLM 留待 V2 |
 
 ## 14. 开放问题 ❓待你确认
 
-1. 模型供应商清单：首发支持哪几家？（OpenAI / Claude / 通义 / DeepSeek / 本地 Ollama-vLLM …）
-2. 编排 V1 是否真的不要画布？（表单式配置 vs 最小画布）
-3. 评测 V2 首发指标集：先做哪些？（相关性 / 准确率 / 幻觉 / 延迟…）
-4. 目标客户行业是否会影响模板市场设计？
+1. 编排 V1 是否真的不要画布？（表单式配置 vs 最小画布）
+2. 评测 V2 首发指标集：先做哪些？（相关性 / 准确率 / 幻觉 / 延迟…）

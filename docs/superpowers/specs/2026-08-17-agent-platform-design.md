@@ -11,6 +11,7 @@
 - **定位**：端到端一体化智能体平台——覆盖智能体「开发 → 编排 → 运行 → 评测 → 治理」全生命周期。
 - **建设背景**：商业产品对外售卖（公有云 SaaS + 私有化交付双形态）。
 - **对标/参考**：Dify（编排形态）、Coze Studio（开源编排引擎实现，Apache 2.0，已实际研读）、LangSmith（评测可观测）、企业 AI 门户（治理运营）作为**理念参考**；评测与可观测能力**全部自研**，不集成 LangSmith 等外部产品。
+- **架构基线**：平台整体（模块划分、工作流引擎内部结构、节点模型、会话运行模型）**全面参考开源 Coze Studio**（字节，Apache 2.0），**仅实现语言 Go → Kotlin**；模型/向量等重计算按我方两服务架构放 Python。
 - **核心形态**：编排采用**纯工作流驱动**（与 Dify 编排形态一致），工作流图是无环有向图（DAG）；「Agent 自主循环」不作为独立模式，而是工作流里的一种节点类型。
 
 ## 2. 功能全景（8 大能力域）✅已确认
@@ -92,6 +93,40 @@ MCP（接入协议，连接外部工具生态）
 - 服务间通过 Nacos 服务发现 + 内网 HTTP 调用。
 - **对外访问原则**：前端 / 客户系统的所有请求**只走平台服务（Kotlin，唯一对外入口）**；Python 服务不对外、不暴露公网。Kotlin 在业务编排中**按需调用** Python（经 `zhijin-ai-client`），仅流式聊天（SSE）场景由 Kotlin 将 Python 的流式响应透传回前端。统一入口带来统一鉴权 / 租户上下文 / 限流 / 审计，Python 保持无状态。
 
+### 3.1 架构基线：全面参考 Coze Studio
+
+本平台以字节开源 **Coze Studio**（`coze-dev/coze-studio`，Apache 2.0）为**全面参考基线**：除实现语言（Go → Kotlin）与「模型/向量等重计算放 Python」外，**平台模块划分、工作流引擎内部结构、节点模型、会话运行模型完整对齐**，不自造轮子式的拍脑袋设计。
+
+**分层对照**（Coze 用 DDD 四层 + 跨域层 + 基础设施层）：
+
+| 层 | Coze Studio（Go） | zhijin（Kotlin 平台服务） |
+|---|---|---|
+| 接口层 | `api/model`（admin/app/conversation/workflow/...） | 各模块 controller + DTO |
+| 应用层 | `application` | 各模块 service |
+| 领域层 | `domain`：agent/app/conversation/knowledge/memory/plugin/prompt/template/user/workflow | 各领域模块 |
+| 跨域层 | `crossdomain`：agentrun/message/variables/database/... | 跨模块协同服务 |
+| 基础设施 | `infra`：orm/es/cache/eventbus/idgen/coderunner/sqlparser/storage/sse/checkpoint | zhijin-framework + 中间件 |
+| 图运行时 | CloudWeGo **Eino** compose（Graph/State/流） | **自研等价图运行时**（Kotlin，见 §7.3） |
+| AI 重计算 | Go 内联（embedding/es/document/modelmgr） | **移入 Python AI 服务**（模型网关/向量化/文档解析/检索/评测） |
+
+**领域模块映射**：
+
+| Coze Studio 域 | 职责 | zhijin 模块 |
+|---|---|---|
+| workflow | 工作流定义/画布/执行 | zhijin-orchestrator |
+| app + agent | 应用(Agent)管理、发布、版本 | zhijin-app |
+| conversation + message + memory | 会话、消息、记忆 | zhijin-chat |
+| plugin | 工具插件开发/接入 | zhijin-tool |
+| knowledge + search | 知识库、检索 | 知识库域（数据/算法在 Python） |
+| prompt | Prompt 管理 | zhijin-app（Prompt 库） |
+| template | 应用/工作流模板 | 模板市场（V3） |
+| user + permission + openauth + passport | 用户、权限、开放鉴权、登录 | zhijin-auth + zhijin-tenant |
+| upload + resource | 上传、资源 | zhijin-resource（MinIO/S3） |
+| admin/config | 平台配置 | 平台运营 |
+| marketplace | 模板市场 | 模板市场（V3） |
+| connector | 渠道接入（企微/钉钉/Slack） | 多渠道（V3） |
+| —（Coze 未开源） | 多租户隔离、计费配额、评测、可观测大盘 | zhijin-tenant/billing + Python eval + 可观测 |
+
 ## 4. 技术选型 ✅已确认
 
 | 组件 | 选型 | 备注 |
@@ -159,18 +194,23 @@ zhijin/                      ← 总目录（monorepo，后续会承载多个项
 - **产品形态**：Dify / Coze 式**可视化、无代码画布工作流**——开发者在画布上拖拽节点、连线、配置参数，工作流定义以 JSON（DSL）保存到后端，引擎按图执行。Dify/Coze 的引擎均为自研，无现成框架可用，故本平台自研引擎（DSL + 执行器 + 画布），仅参考其产品形态。
 - **工作流定义（DSL）**：JSON 描述的一张 DAG 图（节点 + 边）。开发者在画布上画，后端存定义、执行。
 - **显式边（edges）**：DSL 顶层**显式**列出边（`from → to`，条件分支边带 `port`），边决定**执行拓扑**；节点输入引用（`{{node_id.output_key}}`）只负责**数据绑定**，两者分离（参照 Coze Studio）。
-- **节点类型**（V1 从简，V2 扩充）：
+- **节点类型**（对齐 Coze Studio 节点集，V1 从简、V2/V3 补齐）：
 
-| 节点 | 说明 | 版本 |
-|---|---|---|
-| LLM 节点 | 调用模型，输出写变量 | V1 |
-| 工具节点 | 执行已注册工具（HTTP/代码） | V1 |
-| 分支节点（switch） | 按变量条件路由 | V1 |
-| 变量节点 | 变量赋值/转换 | V1 |
-| 知识检索节点 | 调 AI 服务检索，片段注入上下文 | V2 |
-| Agent 节点 | 模型自主循环（ReAct），最大步数兜底 | V2 |
-| 迭代节点 | 对数组逐项执行子流程 | V2 |
-| 代码节点 | 执行用户代码片段 | V2 |
+| 节点 | 说明 | 对应 Coze 节点 | 版本 |
+|---|---|---|---|
+| 开始 / 结束节点 | 工作流入口/出口，定义输入输出参数 | Start / End | V1 |
+| LLM 节点 | 调用模型生成回复；内置节点内自循环（canContinue） | LLM | V1 |
+| 工具节点 | 执行已注册工具（HTTP/代码/插件） | Api(Plugin) | V1 |
+| 分支节点（if/switch） | 按变量条件路由，分支条件支持多条件与或组合 | If | V1 |
+| 变量节点 | 变量赋值 / JSON 序列化 / 反序列化 | Variable / AssignVariable / JsonSerialization / JsonDeserialization | V1 |
+| 数据库节点 | 执行 SQL（读写/查库，经 SQL 解析与权限控制） | Database | V1/V2 |
+| 代码节点 | 执行用户代码片段（沙箱执行） | Code | V2 |
+| 知识检索节点 | 数据集检索，片段注入上下文 | Dataset | V2 |
+| Agent 节点 | 模型自主循环（ReAct），最大步数兜底 | LLM canContinue + 工具（Coze 用 Eino react 编排） | V2 |
+| 迭代节点 | 对数组逐项执行子流程 | Batch / Loop | V2 |
+| 意图识别节点 | LLM 判断输入路由到分支 | Intent | V2 |
+| 消息节点 | 对话流中生成消息、多轮交互 | Message / Question / CreateMessage | V3 |
+| 图片生成节点 | 文生图 | ImageGenerate | V3 |
 
 - **图规则**：工作流图无环（DAG）。循环不画在图上，用「迭代节点」或「Agent 节点内部循环」实现。
 - **节点接口**：每个节点（无论内置/自定义）统一带 **输入接口 + 输出接口**，这是节点与外界唯一的交互契约：
@@ -234,10 +274,13 @@ zhijin/                      ← 总目录（monorepo，后续会承载多个项
 
 ```
 zhijin-orchestrator/
-├── workflow/     ← 工作流定义模型：节点(Node) + 边(Edge)、节点接口(输入/输出 schema)、DAG 校验、DSL 解析器
-├── executor/     ← 节点执行器注册表：LlmExecutor / ToolExecutor / SwitchExecutor
-│                  AgentExecutor / KnowledgeExecutor / IteratorExecutor / CodeExecutor
-├── scheduler/    ← 工作流调度：按 DAG 拓扑执行、分支路由、并行、重试、超时
+├── canvas/       ← 画布层(等价 Coze vo.Node)：节点/边/layout/nodeMeta 画布模型，DSL 解析与序列化
+├── adaptor/      ← 适配器层(等价 Coze NodeAdaptor)：画布节点 → 运行时 NodeSchema，含静态校验
+├── schema/       ← 运行时定义(等价 Coze NodeSchema/WorkflowSchema)：Configs、InputTypes/InputSources、
+│                  OutputTypes、ExceptionConfigs、StreamConfigs、Branches
+├── execute/      ← 执行引擎(等价 Coze Eino compose)：图构建、拓扑执行、字段填充、状态流转、流式
+├── nodes/        ← 各节点执行器(等价 Coze nodes/)：llm / tool / code / dataset / if / loop / batch /
+│                  variable / database / intent / json / ...
 └── context/      ← 变量区({{node_id.output_key}} 引用解析 + $会话/全局变量读写)、会话历史、记忆注入
 ```
 
@@ -289,13 +332,13 @@ data class StreamCapability(val canGenerateStream: Boolean, val requireStreamInp
 - **引擎侧实现**：执行器注册表内，内置节点 = 代码注册的 Executor；自定义节点 = 统一 `CustomNodeExecutor`，按节点类型注册表数据分发执行。
 - **节点类型注册表（数据表）**：存储内置 + 自定义节点的定义、参数 schema、权限、版本、启用状态；工作流 DSL 仅引用节点类型 id，不区分内置/自定义。
 
-### 7.6 开源参考：Coze Studio 对照
+### 7.6 全面参考基线：Coze Studio 引擎内部对照
 
-已研读字节开源版 Coze Studio（`coze-dev/coze-studio`，Apache 2.0，Go + React，底层图运行时用 CloudWeGo **Eino**）。Eino 是 Go 库不可直接复用，以下为**设计对照**与采纳结论：
+已研读字节开源版 Coze Studio（`coze-dev/coze-studio`，Apache 2.0，Go 单体 + React，底层图运行时用 CloudWeGo **Eino**）。Eino 是 Go 库不可直接复用，故自研等价图运行时；引擎内部**逐层对齐**其结构：
 
 | Coze Studio 做法 | 采纳结论 |
 |---|---|
-| 画布节点 `vo.Node` → `NodeAdaptor` 适配器 → 运行时 `NodeSchema` 三层分离 | ✅ 保留「DSL(画布) ↔ 执行器(运行时)」两层，中间加**节点适配器**做转换 + 静态校验 |
+| 画布节点 `vo.Node` → `NodeAdaptor` 适配器 → 运行时 `NodeSchema` 三层分离 | ✅ 完全对齐（见 §7.3 包结构） |
 | 节点接口多态：`Invoke` / `Stream` / `Transform`（+带选项 WOpt） | ✅ 执行器拆为 invoke/stream/transform 多态能力（见 §7.3） |
 | 每节点类型 `RegisterNodeAdaptor(NodeType, factory)` 注册表 | ✅ 与执行器注册表一致 |
 | 显式 `edges`（sourceNodeID → targetNodeID，分支带 port） | ✅ 边显式存储管拓扑；输入引用只管数据绑定 |
@@ -304,6 +347,8 @@ data class StreamCapability(val canGenerateStream: Boolean, val requireStreamInp
 | 每节点 `settingOnError { timeoutMs, retryTimes, processType }` | ✅ 节点级超时/重试/出错降级（见 §7.3） |
 | `StreamConfig { can_generates_stream, require_streaming_input }` | ✅ 流式能力元数据 |
 | `meta.position {x,y}` + `nodeMeta` 画布元信息随 schema 持久化 | ✅ DSL 带 layout / 画布元信息字段 |
+| 复合节点（CompositeNode 父子结构）：Batch/Loop 内嵌子节点 | ✅ 迭代节点内部为子图 |
+| 运行模型（`conversation/run.thrift`）：conversation_id + query + 富内容（text/image/audio/video/file/mix）+ 事件（message/done/error） | ✅ 会话运行与 SSE 事件对齐 |
 | LLM 节点内置 `canContinue` + `loopPrompt*`（节点内自循环）；`Batch/Loop` 节点做数组迭代 | ✅ 验证决策16：循环在节点内实现 |
 | `SchemaType`: DAG（废弃）→ **FDL**（现行，Eino 流描述语言） | ✅ V1 DSL 直接按 FDL 思想设计，不走 DAG 老路 |
 | 版本模型：`workflow_version` SemVer + draft/submit/publish 三阶段 commit | 📋 记入 V2/V3 版本管理 |
@@ -448,7 +493,8 @@ zhijin-ai/
 | 16 | 图规则：工作流图为 DAG（无环）；循环不画在图上，用「迭代节点」或「Agent 节点内部循环」在节点内实现 |
 | 17 | 节点接口：每个节点统一带输入/输出接口定义（参数 schema + 输出字段）；输入来源 = 常量 / `{{node_id.output_key}}` 上游输出引用 / `$var` 会话全局变量，执行前解析校验；画布端口、DSL 静态校验、自定义节点 schema、调试快照均以此为统一契约 |
 | 18 | 显式边：DSL 顶层显式存储 `edges`（线性连线）+ switch 分支 `goto`（条件路由），边管**执行拓扑**，输入引用只管**数据绑定**，二者分离（参照 Coze Studio） |
-| 19 | 节点执行器多态能力（invoke/stream/transform）+ 节点级 `timeout/retry/onError` 配置 + 流式能力元数据（参照 Coze Studio）；编排引擎参照开源 Coze Studio 设计，但底层不引入 Eino（Go 库） |
+| 19 | 全面参考 Coze Studio 架构基线：平台模块划分、引擎内部结构、节点模型、会话运行模型完整对齐（仅 Go → Kotlin）；自研等价 Eino 的图运行时，不引入 Go 库 |
+| 20 | 节点集对齐 Coze Studio：开始/结束/LLM/工具/分支/变量/数据库/代码/知识检索/Agent/迭代/意图/消息/图片生成；「循环在节点内」即 Coze 的 LLM canContinue + Batch/Loop 节点 |
 
 ## 14. 开放问题 ❓待你确认
 

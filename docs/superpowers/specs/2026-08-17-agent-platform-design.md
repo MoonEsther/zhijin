@@ -101,7 +101,7 @@ MCP（接入协议，连接外部工具生态）
 | 主库 | PostgreSQL 16 | SaaS/私有化均友好 |
 | 检索存储（向量+全文） | **Elasticsearch（ES 8.x）** | 参考 RAGFlow 选型：同时支持向量检索（dense knn）与全文检索（BM25），混合检索天然一体；企业运维熟悉、私有化友好；检索访问接口抽象，保留切换弹性 |
 | 缓存/会话 | Redis 7 | 会话、限流、热点缓存 |
-| 对象存储 | MinIO（S3 兼容） | 私有化自托管；公有云可切厂商 OSS/S3 |
+| 对象存储 | **MinIO**（S3 兼容接口） | 代码统一走 AWS S3 SDK（S3 协议），不依赖 MinIO 私有 API；私有化默认 MinIO，公有云可平滑切换阿里 OSS / 腾讯 COS / AWS S3，无需改代码 |
 | 异步任务 | 先 Redis Streams | 支撑 V1；量大了再上 RocketMQ/RabbitMQ |
 | 前端 | React + **antd**（控制台） | Widget 已砍掉，V1 聊天只做开放 API |
 | 部署形态 | 公有云 SaaS + 私有化（Docker Compose 起步） | ❓具体优先级待确认 |

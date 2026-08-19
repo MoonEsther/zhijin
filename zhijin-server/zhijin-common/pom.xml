@@ -23,5 +23,20 @@
       <version>${kotlin.version}</version>
       <scope>test</scope>
     </dependency>
+    <!-- 全局异常处理依赖 Spring Web 的类型与注解（版本由父 POM BOM 管理） -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-web</artifactId>
+    </dependency>
+    <!-- MethodArgumentNotValidException 的超类 BindException 位于 spring-context -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-context</artifactId>
+    </dependency>
+    <!-- 日志门面 slf4j（版本由父 POM BOM 管理） -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
   </dependencies>
 </project>

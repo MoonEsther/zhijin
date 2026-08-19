@@ -803,3 +803,17 @@ git commit -m "docs(plans): B3 追加执行修正记录"
 ## 执行交接
 
 B3 完成后 → **B4 编排引擎**（zhijin-orchestrator：DSL + 节点接口 + 执行器注册表 + 核心节点 + 图执行 + 显式边），届时 `app_version.workflow_dsl` 被真实填充。
+
+---
+
+## 执行修正记录（2026-08-19 实现期间的真实发现，均已落地并验证）
+
+| # | 修正 | 原因 |
+|---|---|---|
+| 1 | mock 自增主键回填（`thenAnswer` 给 `App.id`/`AppVersion.id`/`AppApiKey.id` 赋值） | MyBatis-Plus `IdType.AUTO` 在真实 insert 后回填 id，mock 不会；service 里 `id!!` 会 NPE |
+| 2 | `AppController` KDoc 路径避免 `/**` | Kotlin 把 `/**` 当嵌套注释开始，报 Unclosed comment |
+| 3 | **JwtTenantFilter 锚点改为 `BearerTokenAuthenticationFilter`** | 原用 `UsernamePasswordAuthenticationFilter`（表单登录顺序 5）早于 Bearer 认证（顺序 7），过滤器在认证前运行 → `SecurityContext` 空 → 租户上下文不生效（**真实联调发现**：/api/apps 返回"缺少租户上下文"） |
+| 4 | 联调时 curl 中文 body 触发 `Invalid UTF-8` | Windows 控制台 GBK 编码问题，非应用缺陷；联调用 UTF-8 文件传 body |
+| 5 | `ModelConfigRequest.temperature/maxTokens` 已声明但 `saveConfig` 未消费 | V1 用实体默认值（0.7/2048），后续 B5 细化 |
+
+> **真实联调结论**（连真 PG + 真 Nacos）：创建应用 → 添加供应商 Key（AES 加密落库，明文不在库）→ 配置模型 → 发布（versionNo 自增）→ 生成 API Key（SHA-256 哈希落库，明文一次性返回）全链路通过。

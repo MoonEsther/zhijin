@@ -781,3 +781,25 @@ git commit -m "docs(plans): B2 追加执行修正记录"
 ## 执行交接
 
 B2 完成后 → **B3 应用管理**（zhijin-app：智能体 CRUD + 模型配置 + 发布 + API Key），API Key 鉴权在 B2 的 validate 之外补一个简单过滤器。
+
+---
+
+## 执行修正记录（2026-08-19 实现期间的真实发现，均已落地并验证）
+
+| # | 修正 | 原因 |
+|---|---|---|
+| 1 | `OAuth2AuthorizationServerConfigurer` 用新包 `org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization` | Security 7 并入 spring-security-config，包路径与 6.x 不同 |
+| 2 | issuer 用 `@Value("\${AUTH_ISSUER:...}")` 注入 | 程序化 Bean 里写 `"http://\${...}"` 不会被 Spring 解析占位符 |
+| 3 | `spring-boot-starter-oauth2-authorization-server` 在 Boot 4 可用 | 无需退回 library 构件；含 `spring-boot-security-oauth2-authorization-server:4.0.0` |
+| 4 | `PasswordEncoder.encode` 返回 `@Nullable String` → Kotlin 需 `!!` | Security 7 jspecify 注解变化 |
+| 5 | `AutoConfigureMockMvc` 换包 `org.springframework.boot.webmvc.test.autoconfigure` + `spring-boot-webmvc-test` 依赖 | Boot 4 拆分模块 |
+| 6 | `AuthService` 加 `@Service`；SecurityConfig 加 `BCryptPasswordEncoder` Bean | 上下文启动必需（单测不覆盖） |
+| 7 | `@MapperScan` 加 `annotationClass = Mapper::class` | 原扫描把抽象仓储接口 `SysUserRepository` 也当 Mapper 注册，造成二义性 |
+| 8 | 授权服务器链需 `RegisteredClientRepository` Bean（先 InMemory 占位，T6 换 JDBC） | 框架装配要求 |
+| 9 | **链2 禁用 CSRF**（`csrf { it.disable() }`） | 无状态 JWT API，POST /auth/login 被 CSRF 403（真实联调发现） |
+| 10 | **Jackson 3**：`tools.jackson.module:jackson-module-kotlin:3.0.2` | Boot 4 的 MVC 用 Jackson 3（`tools.jackson` 包）；Jackson 2 版 kotlin 模块无法注册 → body 绑定为空（真实联调发现） |
+| 11 | **登录查找绕过租户拦截器**（`@InterceptorIgnore(tenantLine="true")` + `@Select`） | 登录发生在租户确定前，租户拦截器把查询过滤成 `tenant_id=0` 导致查不到用户（真实联调发现） |
+| 12 | AdminSeeder 幂等查询 `findByTenantIdAndUsername` 同样 `@InterceptorIgnore` | 启动时无租户上下文，否则重启会重复插入撞唯一约束 |
+| 13 | OAuth2 schema（V2 迁移）从官方 jar 提取，PG 适配（timestamptz/text） | 授权服务器表结构以官方为准 |
+
+> **真实联调结论**：`/auth/login` 签发 JWT（tenant_id/sub/uid/roles claims）→ `/auth/validate` 返回身份 → 无 token 401，全链路在真实 PG + Nacos 上验证通过。手动种入默认租户(1) + 管理员 admin（T6 AdminSeeder 已自动幂等化）。

@@ -11,7 +11,7 @@ import java.time.LocalDateTime
 class MyMetaObjectHandler : MetaObjectHandler {
 
     override fun insertFill(metaObject: MetaObject) {
-        strictInsertFill(metaObject, "tenantId", Long::class.java, TenantContextHolder.getTenantId() ?: 0L)
+        strictInsertFill(metaObject, "tenantId", Long::class.javaObjectType, TenantContextHolder.getTenantId() ?: 0L)
         strictInsertFill(metaObject, "createTime", LocalDateTime::class.java, LocalDateTime.now())
         strictInsertFill(metaObject, "updateTime", LocalDateTime::class.java, LocalDateTime.now())
     }

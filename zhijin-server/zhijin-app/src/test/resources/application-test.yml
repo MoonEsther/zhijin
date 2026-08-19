@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:zhijin;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  cloud:
+    nacos:
+      # 测试环境禁用 Nacos 自动装配（注册发现/配置刷新），避免后台线程反复连接本地 8848。
+      # 说明：application.yml 中 spring.config.import=optional:nacos:... 仍会被解析，
+      # 但因带 optional 前缀，Nacos 不可达时会静默跳过，不会导致上下文启动失败。
+      discovery:
+        enabled: false
+      config:
+        enabled: false

@@ -60,7 +60,11 @@
       <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
     </dependency>
-    <!-- Flyway 数据库迁移 -->
+    <!-- Flyway 数据库迁移（Spring Boot 4 起需显式引入 starter 才会激活自动配置，仅依赖 flyway-core 不会自动迁移） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-flyway</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-core</artifactId>

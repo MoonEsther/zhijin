@@ -135,7 +135,7 @@ MCP（接入协议，连接外部工具生态）
 | 组件 | 选型 | 备注 |
 |---|---|---|
 | 平台服务 | **Kotlin** + Spring Boot 3.x + Spring Cloud Alibaba | 用户指定 Kotlin；Nacos 生态成熟 |
-| AI 服务 | Python 3.11 + FastAPI | 以 LangChain 生态为参考/工具库（LangChain / LangGraph 按实际场景选用），不强依赖框架 |
+| AI 服务 | Python 3.11 + FastAPI（依赖管理 **uv**） | 以 LangChain 生态为参考/工具库（LangChain / LangGraph 按实际场景选用），不强依赖框架 |
 | 注册/配置中心 | **Nacos** | 服务发现 + 配置中心 |
 | 主库 | PostgreSQL 16 | SaaS/私有化均友好 |
 | 检索存储（向量+全文） | **Elasticsearch（ES 8.x）** | 参考 RAGFlow 选型：同时支持向量检索（dense knn）与全文检索（BM25），混合检索天然一体；企业运维熟悉、私有化友好；检索访问接口抽象，保留切换弹性 |
@@ -519,6 +519,7 @@ zhijin-ai/
 | 24 | 评测 V2 首发指标集：正确率/准确率、相关性、忠实度、幻觉检测、延迟（前三类含 LLM 裁判打分） |
 | 25 | 工程红线：平台开发**绝对遵守七大编程原则**（单一职责/开闭/里氏替换/接口隔离/依赖倒置/迪米特/合成复用）；所有扩展点收敛为「注册表 + 适配器 + 组件抽象」，保证可扩展性（见 §12.1） |
 | 26 | 前端使用 **TypeScript**（全程 strict 模式），React + TS + antd；不使用 JS |
+| 27 | Python 依赖管理使用 **uv**（pyproject.toml + uv.lock + `uv sync` / `uv run`） |
 
 ## 14. 开放问题 ✅ 已全部确认
 

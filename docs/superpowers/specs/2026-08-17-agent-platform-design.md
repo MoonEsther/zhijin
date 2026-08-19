@@ -109,6 +109,8 @@ MCP（接入协议，连接外部工具生态）
 | 图运行时 | CloudWeGo **Eino** compose（Graph/State/流） | **自研等价图运行时**（Kotlin，见 §7.3） |
 | AI 重计算 | Go 内联（embedding/es/document/modelmgr） | **移入 Python AI 服务**（模型网关/向量化/文档解析/检索/评测） |
 
+> **关键原则（两服务为何不破坏对齐）**：Coze 引擎的模型/检索/文档解析均为**组件抽象**（Eino model component），引擎只依赖抽象。我方把这三类组件默认实现为「经 `zhijin-ai-client` 调 Python」，引擎结构因此与 Coze 完全对齐，仅组件实现走远程。该抽象同时保留「个别节点 Kotlin 内联实现」的替换弹性。唯一代价是 SSE 流式透传多一跳，由 OpenAI 兼容格式 + SSE 事实标准摊薄，V1 需重点保证该链路正确。
+
 **领域模块映射**：
 
 | Coze Studio 域 | 职责 | zhijin 模块 |

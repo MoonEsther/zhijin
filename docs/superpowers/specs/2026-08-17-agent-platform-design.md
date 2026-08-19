@@ -121,7 +121,7 @@ zhijin/                      ← 总目录（monorepo，后续会承载多个项
 | `zhijin-common` | 统一响应、异常、日志、工具类 | 是（基础） |
 | `zhijin-framework` | Nacos 接入、数据库、Redis、安全框架、限流 | 是（基础） |
 | `zhijin-tenant` | 多租户：租户上下文、数据隔离、租户管理 | 与 auth 合并 |
-| `zhijin-auth` | 登录认证、Token、RBAC 权限 | 与 tenant 合并 |
+| `zhijin-auth` | ★ 认证中心（独立边界模块）：用户/角色/权限/Token，对外只暴露认证接口契约（login/logout/validate/refresh/userinfo），业务代码不触碰内部 | 与 tenant 合并 |
 | `zhijin-app` | 应用管理：智能体 CRUD、模型配置、版本发布/灰度 | 是 |
 | `zhijin-orchestrator` | ★ 编排引擎（见 §7） | 是（核心） |
 | `zhijin-chat` | 会话运行时：会话管理、SSE 流式、长任务、记忆 | 是 |
@@ -129,6 +129,20 @@ zhijin/                      ← 总目录（monorepo，后续会承载多个项
 | `zhijin-billing` | 计费配额：用量统计、配额控制 | 与 audit 合并 |
 | `zhijin-audit` | 审计：操作留痕、安全事件 | 与 billing 合并 |
 | `zhijin-ai-client` | 调用 AI 服务（Python）的封装层 | 是 |
+
+### 6.1 认证中心设计（独立边界模块）
+
+- **形态**：平台服务内 `zhijin-auth` 模块，逻辑上独立成「中心」。后期如需拆成独立服务，搬模块 + 加网络层即可，业务代码零改动。
+- **职责**：用户、角色、权限（RBAC）、Token 签发/校验/刷新。
+- **对外接口契约**（业务模块只能通过这些接口与认证中心交互，不触碰内部）：
+
+  `login` / `logout` / `validate` / `refresh` / `userinfo`
+
+- **调用关系**：
+  - 管理端登录 → `login` 签发 JWT（Token 内携带租户信息）；
+  - 客户系统调用开放 API → API Key 校验（Key 绑定租户），由过滤器完成；
+  - 各业务模块权限校验 → 调 `validate` 或读取已解析的身份上下文；
+  - 平台服务 → Python 内部调用时透传身份上下文（`X-Tenant-Id` / `X-User-Id` header），Python 不重新鉴权。
 
 ## 7. 编排引擎设计（工作流驱动）✅已确认
 
@@ -337,6 +351,7 @@ zhijin-ai/
 | 10 | 数据访问：谁拥有 schema 谁直连库，platform→Kotlin、ai_kb→Python |
 | 11 | 仓库：monorepo，`zhijin-server` / `zhijin-ai` / `zhijin-web` |
 | 12 | 评测与可观测全部自研，外部产品（LangSmith 等）仅作理念参考，不引入依赖 |
+| 13 | 认证授权中心：平台服务内独立模块 `zhijin-auth`，逻辑独立成中心，后期可搬成独立服务零重构 |
 
 ## 14. 开放问题 ❓待你确认
 

@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Configuration
 
 /** MyBatis-Plus 插件装配：租户隔离 + 分页。顺序：租户在前，分页在后。 */
 @Configuration
-@MapperScan("com.zhijin.framework.mapper")
+@MapperScan("com.zhijin.framework.mapper", "com.zhijin.auth.repository")
 class MybatisPlusConfig {
 
     @Bean

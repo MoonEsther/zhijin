@@ -1,5 +1,6 @@
 package com.zhijin.framework.log
 
+import com.zhijin.framework.tenant.TenantFilter
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -14,5 +15,13 @@ class LogConfig {
             setFilter(TraceIdFilter())
             addUrlPatterns("/*")
             order = Int.MIN_VALUE // 最早执行，保证下游拿到 traceId
+        }
+
+    @Bean
+    fun tenantFilter(): FilterRegistrationBean<TenantFilter> =
+        FilterRegistrationBean<TenantFilter>().apply {
+            setFilter(TenantFilter())
+            addUrlPatterns("/*")
+            order = Int.MIN_VALUE + 1 // 紧接 traceId 之后
         }
 }

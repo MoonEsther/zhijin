@@ -12,6 +12,7 @@
 - **建设背景**：商业产品对外售卖（公有云 SaaS + 私有化交付双形态）。
 - **对标/参考**：Dify（编排形态）、Coze Studio（开源编排引擎实现，Apache 2.0，已实际研读）、LangSmith（评测可观测）、企业 AI 门户（治理运营）作为**理念参考**；评测与可观测能力**全部自研**，不集成 LangSmith 等外部产品。
 - **架构基线**：平台整体（模块划分、工作流引擎内部结构、节点模型、会话运行模型）**全面参考开源 Coze Studio**（字节，Apache 2.0），**仅实现语言 Go → Kotlin**；模型/向量等重计算按我方两服务架构放 Python。
+- **术语约定**：本文档及后续讨论中「LangChain」统一指代 LangChain 生态体系（含 LangChain / LangGraph / LangSmith）；引用到具体库时按实际名称（如编排用 LangGraph）。
 - **核心形态**：编排采用**纯工作流驱动**（与 Dify 编排形态一致），工作流图是无环有向图（DAG）；「Agent 自主循环」不作为独立模式，而是工作流里的一种节点类型。
 
 ## 2. 功能全景（8 大能力域）✅已确认
@@ -134,7 +135,7 @@ MCP（接入协议，连接外部工具生态）
 | 组件 | 选型 | 备注 |
 |---|---|---|
 | 平台服务 | **Kotlin** + Spring Boot 3.x + Spring Cloud Alibaba | 用户指定 Kotlin；Nacos 生态成熟 |
-| AI 服务 | Python 3.11 + FastAPI | 以 LangGraph 为参考/工具库，不强依赖框架 |
+| AI 服务 | Python 3.11 + FastAPI | 以 LangChain 生态为参考/工具库（LangChain / LangGraph 按实际场景选用），不强依赖框架 |
 | 注册/配置中心 | **Nacos** | 服务发现 + 配置中心 |
 | 主库 | PostgreSQL 16 | SaaS/私有化均友好 |
 | 检索存储（向量+全文） | **Elasticsearch（ES 8.x）** | 参考 RAGFlow 选型：同时支持向量检索（dense knn）与全文检索（BM25），混合检索天然一体；企业运维熟悉、私有化友好；检索访问接口抽象，保留切换弹性 |

@@ -1,0 +1,20 @@
+[project]
+name = "zhijin-ai"
+version = "0.1.0"
+description = "织锦 AI 服务：模型网关 / RAG / 评测"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.1",
+    "httpx>=0.27.0",
+    "nacos-sdk-python>=0.4.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2.1",
+]
+
+[tool.pytest.ini_options]
+# 让 pytest 将项目根目录加入 sys.path，保证 `from app.main import app` 可导入。
+pythonpath = ["."]

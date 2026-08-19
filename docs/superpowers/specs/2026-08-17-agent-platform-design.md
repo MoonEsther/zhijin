@@ -172,6 +172,10 @@ zhijin/                      ← 总目录（monorepo，后续会承载多个项
 | 代码节点 | 执行用户代码片段 | V2 |
 
 - **图规则**：工作流图无环（DAG）。循环不画在图上，用「迭代节点」或「Agent 节点内部循环」实现。
+- **节点接口**：每个节点（无论内置/自定义）统一带 **输入接口 + 输出接口**，这是节点与外界唯一的交互契约：
+  - **输入（inputs）**：声明输入参数 `{ key, 类型, 必填, 默认值 }`；参数值来源三选一——常量、上游节点输出引用 `{{node_id.output_key}}`、会话/全局变量 `$var`。执行前做引用解析 + 必填/类型校验。
+  - **输出（outputs）**：声明输出字段 `{ key, 类型 }`；节点执行结果按 `{{node_id.output_key}}` 写入变量区，供下游节点引用。
+  - 接口的作用：画布据此渲染节点**端口**与连线、DSL 据此做**静态校验**、自定义节点据此定义参数 schema（与 §7.5 一致）、调试/观测据此记录每节点的**输入输出快照**。
 
 ### 7.2 DSL 示例（售前咨询助手）
 
@@ -181,31 +185,53 @@ zhijin/                      ← 总目录（monorepo，后续会承载多个项
   "start": "intent-classify",
   "nodes": [
     { "id": "intent-classify", "type": "llm",
-      "prompt": "判断用户意图：询价/售后/其他", "output": "$intent" },
+      "inputs": { "model": "gpt-4o",
+                  "prompt": "判断用户意图：询价/售后/其他",
+                  "history": "$session.history" },
+      "outputs": [ { "key": "intent", "type": "string" } ] },
+
     { "id": "route", "type": "switch",
+      "inputs": { "condition": "{{intent-classify.intent}}" },
       "branches": [
-        { "when": "$intent == '询价'", "goto": "query-price" },
-        { "when": "$intent == '售后'", "goto": "query-order" },
+        { "when": "== '询价'", "goto": "query-price" },
+        { "when": "== '售后'", "goto": "query-order" },
         { "default": "create-ticket" } ] },
-    { "id": "query-price", "type": "tool", "tool": "query_product_price",
-      "args": { "sku": "$sku" } },
-    { "id": "query-order", "type": "tool", "tool": "query_order_status",
-      "args": { "orderNo": "$orderNo" } },
-    { "id": "create-ticket", "type": "tool", "tool": "create_ticket" },
-    { "id": "final", "type": "llm", "prompt": "根据工具结果组织回答" }
+
+    { "id": "query-price", "type": "tool",
+      "inputs": { "tool": "query_product_price",
+                  "params": { "sku": "$session.sku" } },
+      "outputs": [ { "key": "price", "type": "number" },
+                   { "key": "stock", "type": "number" } ] },
+
+    { "id": "query-order", "type": "tool",
+      "inputs": { "tool": "query_order_status",
+                  "params": { "orderNo": "$session.orderNo" } },
+      "outputs": [ { "key": "status", "type": "string" } ] },
+
+    { "id": "create-ticket", "type": "tool",
+      "inputs": { "tool": "create_ticket" },
+      "outputs": [ { "key": "ticketId", "type": "string" } ] },
+
+    { "id": "final", "type": "llm",
+      "inputs": { "model": "gpt-4o",
+                  "prompt": "根据工具结果组织回答",
+                  "toolResult": "{{query-price.price}}" },
+      "outputs": [ { "key": "reply", "type": "string" } ] }
   ]
 }
 ```
+
+> 变量引用约定：`{{node_id.output_key}}` = 引用上游节点某个输出字段；`$var` = 会话/全局变量（如 `$session.history`、`$session.sku`）。所有引用在节点执行前由引擎统一解析、校验。图（edges）在画布端由「输入引用 + 分支 goto」推导，DSL 中不单独列边。
 
 ### 7.3 引擎内部结构（Kotlin 包结构）
 
 ```
 zhijin-orchestrator/
-├── workflow/     ← 工作流定义模型：节点(Node) + 边(Edge)、DAG 校验、DSL 解析器
+├── workflow/     ← 工作流定义模型：节点(Node) + 边(Edge)、节点接口(输入/输出 schema)、DAG 校验、DSL 解析器
 ├── executor/     ← 节点执行器注册表：LlmExecutor / ToolExecutor / SwitchExecutor
 │                  AgentExecutor / KnowledgeExecutor / IteratorExecutor / CodeExecutor
 ├── scheduler/    ← 工作流调度：按 DAG 拓扑执行、分支路由、并行、重试、超时
-└── context/      ← 变量区($变量读写)、会话历史、记忆注入
+└── context/      ← 变量区({{node_id.output_key}} 引用解析 + $会话/全局变量读写)、会话历史、记忆注入
 ```
 
 **关键设计：执行器注册表。** 每种节点类型 = 一个实现同一接口的 Executor 类：
@@ -222,9 +248,9 @@ interface NodeExecutor {
 
 1. 收到用户消息 → 创建上下文（变量区 + 会话历史 + 记忆）
 2. 从 `start` 节点开始，按 DAG 拓扑逐节点执行
-3. 每个节点输出写入变量区（`$变量`），供后续节点读取
-4. LLM/检索节点 → 调 AI 服务；工具节点 → 本地执行
-5. 走到终点节点 → 生成最终回复，流式返回
+3. 每个节点执行前：按**输入接口**解析入参（常量直用、`{{node_id.output_key}}` 从变量区取值、`$var` 取会话/全局变量），做必填 + 类型校验
+4. 节点执行：LLM/检索节点 → 调 AI 服务；工具节点 → 本地执行；结果按**输出接口**写入变量区，供下游引用
+5. 走到终点节点 → 聚合输出为最终回复，流式返回
 
 ### 7.5 节点类型分级与自定义节点（权限控制）
 
@@ -380,6 +406,7 @@ zhijin-ai/
 | 14 | 认证/授权基于 **Spring Authorization Server**（OAuth 2.1 / OIDC 1.0），支持第三方平台以 OAuth Client 接入 |
 | 15 | 节点类型分级：内置节点（系统维护）+ 自定义节点（租户维护、按角色授权）；自定义节点实现方式 = HTTP 工具 / 代码 / 子工作流模板 |
 | 16 | 图规则：工作流图为 DAG（无环）；循环不画在图上，用「迭代节点」或「Agent 节点内部循环」在节点内实现 |
+| 17 | 节点接口：每个节点统一带输入/输出接口定义（参数 schema + 输出字段）；输入来源 = 常量 / `{{node_id.output_key}}` 上游输出引用 / `$var` 会话全局变量，执行前解析校验；画布端口、DSL 静态校验、自定义节点 schema、调试快照均以此为统一契约 |
 
 ## 14. 开放问题 ❓待你确认
 

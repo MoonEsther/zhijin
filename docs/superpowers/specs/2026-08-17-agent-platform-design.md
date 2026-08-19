@@ -10,7 +10,7 @@
 
 - **定位**：端到端一体化智能体平台——覆盖智能体「开发 → 编排 → 运行 → 评测 → 治理」全生命周期。
 - **建设背景**：商业产品对外售卖（公有云 SaaS + 私有化交付双形态）。
-- **对标/参考**：Dify（编排开发）、LangSmith（评测可观测）、企业 AI 门户（治理运营）作为**理念参考**；评测与可观测能力**全部自研**，不集成 LangSmith 等外部产品。
+- **对标/参考**：Dify（编排形态）、Coze Studio（开源编排引擎实现，Apache 2.0，已实际研读）、LangSmith（评测可观测）、企业 AI 门户（治理运营）作为**理念参考**；评测与可观测能力**全部自研**，不集成 LangSmith 等外部产品。
 - **核心形态**：编排采用**纯工作流驱动**（与 Dify 编排形态一致），工作流图是无环有向图（DAG）；「Agent 自主循环」不作为独立模式，而是工作流里的一种节点类型。
 
 ## 2. 功能全景（8 大能力域）✅已确认
@@ -158,6 +158,7 @@ zhijin/                      ← 总目录（monorepo，后续会承载多个项
 
 - **产品形态**：Dify / Coze 式**可视化、无代码画布工作流**——开发者在画布上拖拽节点、连线、配置参数，工作流定义以 JSON（DSL）保存到后端，引擎按图执行。Dify/Coze 的引擎均为自研，无现成框架可用，故本平台自研引擎（DSL + 执行器 + 画布），仅参考其产品形态。
 - **工作流定义（DSL）**：JSON 描述的一张 DAG 图（节点 + 边）。开发者在画布上画，后端存定义、执行。
+- **显式边（edges）**：DSL 顶层**显式**列出边（`from → to`，条件分支边带 `port`），边决定**执行拓扑**；节点输入引用（`{{node_id.output_key}}`）只负责**数据绑定**，两者分离（参照 Coze Studio）。
 - **节点类型**（V1 从简，V2 扩充）：
 
 | 节点 | 说明 | 版本 |
@@ -217,11 +218,17 @@ zhijin/                      ← 总目录（monorepo，后续会承载多个项
                   "prompt": "根据工具结果组织回答",
                   "toolResult": "{{query-price.price}}" },
       "outputs": [ { "key": "reply", "type": "string" } ] }
+  ],
+  "edges": [
+    { "from": "intent-classify", "to": "route" },
+    { "from": "query-price", "to": "final" },
+    { "from": "query-order", "to": "final" },
+    { "from": "create-ticket", "to": "final" }
   ]
 }
 ```
 
-> 变量引用约定：`{{node_id.output_key}}` = 引用上游节点某个输出字段；`$var` = 会话/全局变量（如 `$session.history`、`$session.sku`）。所有引用在节点执行前由引擎统一解析、校验。图（edges）在画布端由「输入引用 + 分支 goto」推导，DSL 中不单独列边。
+> 变量引用约定：`{{node_id.output_key}}` = 引用上游节点某个输出字段；`$var` = 会话/全局变量（如 `$session.history`、`$session.sku`）。所有引用在节点执行前由引擎统一解析、校验。边（edges）**显式存储**于 DSL 顶层：线性连线用 `edges`，条件分支用 switch 节点的 `branches[].goto`（对应 Coze 的 If 分支 `next_node_id`）；边管拓扑、输入引用管数据绑定，二者分离。
 
 ### 7.3 引擎内部结构（Kotlin 包结构）
 
@@ -234,15 +241,29 @@ zhijin-orchestrator/
 └── context/      ← 变量区({{node_id.output_key}} 引用解析 + $会话/全局变量读写)、会话历史、记忆注入
 ```
 
-**关键设计：执行器注册表。** 每种节点类型 = 一个实现同一接口的 Executor 类：
+**关键设计：执行器注册表 + 节点能力接口。** 每种节点类型 = 一个实现能力接口的 Executor 类，注册进注册表（参照 Coze Studio 的 `RegisterNodeAdaptor`）：
 
 ```kotlin
+// 节点执行器能力接口（多态）：普通节点实现 invoke，流式节点实现 stream，按需实现
 interface NodeExecutor {
-    fun execute(ctx: NodeContext, node: NodeDef): NodeResult
+    suspend fun invoke(ctx: NodeContext, schema: NodeSchema): NodeResult         // 非流 → 非流
+    suspend fun stream(ctx: NodeContext, schema: NodeSchema): Flow<NodeEvent>    // 非流 → 流式(LLM/Agent)
+    suspend fun transform(ctx: NodeContext, schema: NodeSchema): Flow<NodeEvent> // 流式 → 流式(迭代/聚合)
 }
+
+// 节点级执行配置：超时/重试/出错降级（参照 Coze 的 settingOnError）
+data class NodeExecConfig(
+    val timeoutMs: Long = 60_000,               // 单节点超时，0=不设
+    val maxRetry: Int = 0,                       // 最大重试次数
+    val onError: ErrorProcessType = THROW,       // THROW / RETURN_DEFAULT
+    val dataOnErr: Any? = null,                  // 出错时返回的降级值(与 RETURN_DEFAULT 搭配)
+)
+
+// 流式能力声明：是否真正产生流式输出 / 是否要求流式输入
+data class StreamCapability(val canGenerateStream: Boolean, val requireStreamInput: Boolean)
 ```
 
-调度器只做一件事：找到当前节点的 Executor → 执行 → 根据结果决定下一步 → 继续。新增节点类型 = 新增一个 Executor 注册，不动调度器。
+调度器只做一件事：找到当前节点的 Executor → 按能力接口执行 → 根据结果决定下一步 → 继续。新增节点类型 = 新增一个 Executor 注册，不动调度器。
 
 ### 7.4 运行机制
 
@@ -267,6 +288,25 @@ interface NodeExecutor {
   3. 封装为一段子工作流（内部由基础节点组合，即「模板节点」，也是 Skill 的底层形态）。
 - **引擎侧实现**：执行器注册表内，内置节点 = 代码注册的 Executor；自定义节点 = 统一 `CustomNodeExecutor`，按节点类型注册表数据分发执行。
 - **节点类型注册表（数据表）**：存储内置 + 自定义节点的定义、参数 schema、权限、版本、启用状态；工作流 DSL 仅引用节点类型 id，不区分内置/自定义。
+
+### 7.6 开源参考：Coze Studio 对照
+
+已研读字节开源版 Coze Studio（`coze-dev/coze-studio`，Apache 2.0，Go + React，底层图运行时用 CloudWeGo **Eino**）。Eino 是 Go 库不可直接复用，以下为**设计对照**与采纳结论：
+
+| Coze Studio 做法 | 采纳结论 |
+|---|---|
+| 画布节点 `vo.Node` → `NodeAdaptor` 适配器 → 运行时 `NodeSchema` 三层分离 | ✅ 保留「DSL(画布) ↔ 执行器(运行时)」两层，中间加**节点适配器**做转换 + 静态校验 |
+| 节点接口多态：`Invoke` / `Stream` / `Transform`（+带选项 WOpt） | ✅ 执行器拆为 invoke/stream/transform 多态能力（见 §7.3） |
+| 每节点类型 `RegisterNodeAdaptor(NodeType, factory)` 注册表 | ✅ 与执行器注册表一致 |
+| 显式 `edges`（sourceNodeID → targetNodeID，分支带 port） | ✅ 边显式存储管拓扑；输入引用只管数据绑定 |
+| 参数 `{ name, type, value: literal \| ref }`，ref 指向 `{blockID, name}` | ✅ 即 `{{node_id.output_key}}`，已一致 |
+| `TypeInfo` 递归类型（对象 properties / 数组 elem_type / 文件 file_type） | ✅ 输入输出类型用递归 TypeInfo |
+| 每节点 `settingOnError { timeoutMs, retryTimes, processType }` | ✅ 节点级超时/重试/出错降级（见 §7.3） |
+| `StreamConfig { can_generates_stream, require_streaming_input }` | ✅ 流式能力元数据 |
+| `meta.position {x,y}` + `nodeMeta` 画布元信息随 schema 持久化 | ✅ DSL 带 layout / 画布元信息字段 |
+| LLM 节点内置 `canContinue` + `loopPrompt*`（节点内自循环）；`Batch/Loop` 节点做数组迭代 | ✅ 验证决策16：循环在节点内实现 |
+| `SchemaType`: DAG（废弃）→ **FDL**（现行，Eino 流描述语言） | ✅ V1 DSL 直接按 FDL 思想设计，不走 DAG 老路 |
+| 版本模型：`workflow_version` SemVer + draft/submit/publish 三阶段 commit | 📋 记入 V2/V3 版本管理 |
 
 ## 8. AI 服务模块划分（Python）✅已确认
 
@@ -407,6 +447,8 @@ zhijin-ai/
 | 15 | 节点类型分级：内置节点（系统维护）+ 自定义节点（租户维护、按角色授权）；自定义节点实现方式 = HTTP 工具 / 代码 / 子工作流模板 |
 | 16 | 图规则：工作流图为 DAG（无环）；循环不画在图上，用「迭代节点」或「Agent 节点内部循环」在节点内实现 |
 | 17 | 节点接口：每个节点统一带输入/输出接口定义（参数 schema + 输出字段）；输入来源 = 常量 / `{{node_id.output_key}}` 上游输出引用 / `$var` 会话全局变量，执行前解析校验；画布端口、DSL 静态校验、自定义节点 schema、调试快照均以此为统一契约 |
+| 18 | 显式边：DSL 顶层显式存储 `edges`（线性连线）+ switch 分支 `goto`（条件路由），边管**执行拓扑**，输入引用只管**数据绑定**，二者分离（参照 Coze Studio） |
+| 19 | 节点执行器多态能力（invoke/stream/transform）+ 节点级 `timeout/retry/onError` 配置 + 流式能力元数据（参照 Coze Studio）；编排引擎参照开源 Coze Studio 设计，但底层不引入 Eino（Go 库） |
 
 ## 14. 开放问题 ❓待你确认
 

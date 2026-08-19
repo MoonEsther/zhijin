@@ -16,7 +16,7 @@
 
 ```
 zhijin/                  ← monorepo 总目录
-├── zhijin-server/       ← 平台服务（Kotlin + Spring Boot 3 + Nacos）
+├── zhijin-server/       ← 平台服务（Kotlin + Spring Boot 4 + Nacos）
 ├── zhijin-ai/           ← AI 服务（Python + FastAPI：模型网关 / RAG / 评测）
 ├── zhijin-web/          ← 前端控制台（React + antd）
 └── docs/

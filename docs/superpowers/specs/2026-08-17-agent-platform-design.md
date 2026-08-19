@@ -67,7 +67,7 @@ MCP（接入协议，连接外部工具生态）
                  ▼                             ▼
       ┌───────────────────┐         ┌───────────────────┐
       │ 🟩 平台服务(Kotlin) │         │ 🟨 AI 服务(Python)  │
-      │  (Spring Boot 3)  │         │  (FastAPI)        │
+      │  (Spring Boot 4)  │         │  (FastAPI)        │
       │                    │ ◀────▶  │                   │
       │ 平台业务 + 编排引擎 │   Nacos │ 模型网关代理        │
       │ + 会话 + 工具执行   │  发现    │ + embedding/向量化 │
@@ -134,7 +134,7 @@ MCP（接入协议，连接外部工具生态）
 
 | 组件 | 选型 | 备注 |
 |---|---|---|
-| 平台服务 | **Kotlin** + Spring Boot 3.x + Spring Cloud Alibaba | 用户指定 Kotlin；Nacos 生态成熟 |
+| 平台服务 | **Kotlin** + Spring Boot 4.x + Spring Cloud 2025.1 + Spring Cloud Alibaba 2025.1（JDK 17） | 用户指定 Kotlin；Nacos 生态成熟 |
 | AI 服务 | Python 3.11 + FastAPI（依赖管理 **uv**） | 以 LangChain 生态为参考/工具库（LangChain / LangGraph 按实际场景选用），不强依赖框架 |
 | 注册/配置中心 | **Nacos** | 服务发现 + 配置中心 |
 | 主库 | PostgreSQL 16 | SaaS/私有化均友好 |
@@ -143,7 +143,7 @@ MCP（接入协议，连接外部工具生态）
 | 对象存储 | **MinIO**（S3 兼容接口） | 代码统一走 AWS S3 SDK（S3 协议），不依赖 MinIO 私有 API；私有化默认 MinIO，公有云可平滑切换阿里 OSS / 腾讯 COS / AWS S3，无需改代码 |
 | 异步任务 | 先 Redis Streams | 支撑 V1；量大了再上 RocketMQ/RabbitMQ |
 | 前端 | React + **TypeScript** + **antd**（控制台） | 全程 TS 严格模式；Widget 已砍掉，V1 聊天只做开放 API |
-| 部署形态 | **Docker Compose 部署（先行）** | 全栈中间件 + 两个服务用 docker-compose 一键编排；私有化交付同套方案；后续按需扩展 K8s（大规模私有化 / 公有云 SaaS） |
+| 部署形态 | **Docker Compose 部署（先行）** | 本平台中间件（Redis/ES/Nacos）+ 两个服务用 docker-compose 编排；**PostgreSQL 与 MinIO 由既有基础设施提供**（不编排，服务经环境变量连接）；私有化交付同套方案；后续按需扩展 K8s |
 
 ## 5. 仓库结构（monorepo）✅已确认
 
@@ -497,7 +497,7 @@ zhijin-ai/
 | 2 | 8 大能力域全部纳入 |
 | 3 | 编排形态：纯工作流驱动（Dify 风格），DAG，Agent 是节点类型 |
 | 4 | 服务数：2 个（平台服务 Kotlin + AI 服务 Python），不拆微服务网格 |
-| 5 | 后端语言：**Kotlin** + Spring Boot 3 + Spring Cloud Alibaba（Nacos） |
+| 5 | 后端语言：**Kotlin** + Spring Boot 4 + Spring Cloud 2025.1 + Spring Cloud Alibaba（Nacos），JDK 17 |
 | 6 | AI 服务：Python 3.11 + FastAPI |
 | 7 | 存储：PostgreSQL 16、Elasticsearch（向量+全文检索）、Redis 7、MinIO、Redis Streams |
 | 8 | 前端：React + antd（控制台）；Widget 不做，V1 只做开放 API |
@@ -520,6 +520,7 @@ zhijin-ai/
 | 25 | 工程红线：平台开发**绝对遵守七大编程原则**（单一职责/开闭/里氏替换/接口隔离/依赖倒置/迪米特/合成复用）；所有扩展点收敛为「注册表 + 适配器 + 组件抽象」，保证可扩展性（见 §12.1） |
 | 26 | 前端使用 **TypeScript**（全程 strict 模式），React + TS + antd；不使用 JS |
 | 27 | Python 依赖管理使用 **uv**（pyproject.toml + uv.lock + `uv sync` / `uv run`） |
+| 28 | 部署边界：PostgreSQL 与 MinIO 由**既有基础设施**提供（不纳入 docker-compose），服务经环境变量连接；docker-compose 仅编排 Redis / ES / Nacos 与本平台服务 |
 
 ## 14. 开放问题 ✅ 已全部确认
 

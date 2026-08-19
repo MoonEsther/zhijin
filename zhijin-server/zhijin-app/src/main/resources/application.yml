@@ -8,6 +8,9 @@ spring:
     import: optional:nacos:zhijin-server.yml?group=DEFAULT_GROUP&refreshEnabled=true
   cloud:
     nacos:
+      # Nacos 认证（用户环境开启）
+      username: ${NACOS_USERNAME:}
+      password: ${NACOS_PASSWORD:}
       discovery:
         server-addr: ${NACOS_ADDR:127.0.0.1:8848}
         namespace: ${NACOS_NAMESPACE:}

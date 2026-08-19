@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration
 /** MyBatis-Plus 插件装配：租户隔离 + 分页。顺序：租户在前，分页在后。 */
 @Configuration
 @MapperScan(
-    basePackages = ["com.zhijin.framework.mapper", "com.zhijin.auth.repository"],
+    basePackages = ["com.zhijin.framework.mapper", "com.zhijin.auth.repository", "com.zhijin.app.mapper"],
     // 只注册 @Mapper 注解的接口，避免把同包的仓储抽象接口(SysUserRepository)也注册成 Mapper Bean
     annotationClass = Mapper::class,
 )

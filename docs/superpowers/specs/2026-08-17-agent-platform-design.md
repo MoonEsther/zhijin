@@ -96,7 +96,7 @@ MCP（接入协议，连接外部工具生态）
 | 组件 | 选型 | 备注 |
 |---|---|---|
 | 平台服务 | **Kotlin** + Spring Boot 3.x + Spring Cloud Alibaba | 用户指定 Kotlin；Nacos 生态成熟 |
-| AI 服务 | Python 3.11 + FastAPI | LangChain 仅作工具库，不强依赖框架 |
+| AI 服务 | Python 3.11 + FastAPI | 以 LangGraph 为参考/工具库，不强依赖框架 |
 | 注册/配置中心 | **Nacos** | 服务发现 + 配置中心 |
 | 主库 | PostgreSQL 16 | SaaS/私有化均友好 |
 | 检索存储（向量+全文） | **Elasticsearch（ES 8.x）** | 参考 RAGFlow 选型：同时支持向量检索（dense knn）与全文检索（BM25），混合检索天然一体；企业运维熟悉、私有化友好；检索访问接口抽象，保留切换弹性 |

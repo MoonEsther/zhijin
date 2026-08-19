@@ -15,3 +15,18 @@ spring:
         server-addr: ${NACOS_ADDR:127.0.0.1:8848}
         namespace: ${NACOS_NAMESPACE:}
         file-extension: yml
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/zhijin}
+    username: ${POSTGRES_USER:zhijin}
+    password: ${POSTGRES_PASSWORD:zhijin_dev_2026}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false

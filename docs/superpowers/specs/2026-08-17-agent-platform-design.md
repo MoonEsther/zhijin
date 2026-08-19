@@ -138,14 +138,17 @@ zhijin/                      ← 总目录（monorepo，后续会承载多个项
 ### 6.1 认证中心设计（独立边界模块）
 
 - **形态**：平台服务内 `zhijin-auth` 模块，逻辑上独立成「中心」。后期如需拆成独立服务，搬模块 + 加网络层即可，业务代码零改动。
-- **职责**：用户、角色、权限（RBAC）、Token 签发/校验/刷新。
+- **技术实现**：基于 **Spring Authorization Server（OAuth 2.1 / OIDC 1.0）**；用户身份、角色、权限（RBAC）使用自有用户体系，授权协议层由 SAS 提供。
 - **对外接口契约**（业务模块只能通过这些接口与认证中心交互，不触碰内部）：
 
   `login` / `logout` / `validate` / `refresh` / `userinfo`
 
+- **三方平台接入（OAuth Client）**：第三方平台在平台注册 client（`client_id` / `client_secret`），通过授权码（Authorization Code + PKCE）、客户端凭证（Client Credentials，M2M 场景）、刷新令牌等方式获取 access token，调用平台开放 API；提供 OIDC Discovery（`/.well-known/openid-configuration`）与 JWKS 端点。
+- **开放 API 两种鉴权方式**：
+  - 简单场景：静态 **API Key**（绑定租户），由过滤器校验；
+  - 三方平台正式对接：**OAuth 2.0 access token**（可吊销、可审计、可区分来源）。
 - **调用关系**：
-  - 管理端登录 → `login` 签发 JWT（Token 内携带租户信息）；
-  - 客户系统调用开放 API → API Key 校验（Key 绑定租户），由过滤器完成；
+  - 管理端登录 → `login` 签发 access token（Token 内携带租户信息）；
   - 各业务模块权限校验 → 调 `validate` 或读取已解析的身份上下文；
   - 平台服务 → Python 内部调用时透传身份上下文（`X-Tenant-Id` / `X-User-Id` header），Python 不重新鉴权。
 
@@ -358,6 +361,7 @@ zhijin-ai/
 | 11 | 仓库：monorepo，`zhijin-server` / `zhijin-ai` / `zhijin-web` |
 | 12 | 评测与可观测全部自研，外部产品（LangSmith 等）仅作理念参考，不引入依赖 |
 | 13 | 认证授权中心：平台服务内独立模块 `zhijin-auth`，逻辑独立成中心，后期可搬成独立服务零重构 |
+| 14 | 认证/授权基于 **Spring Authorization Server**（OAuth 2.1 / OIDC 1.0），支持第三方平台以 OAuth Client 接入 |
 
 ## 14. 开放问题 ❓待你确认
 

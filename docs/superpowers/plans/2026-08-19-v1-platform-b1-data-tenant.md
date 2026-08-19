@@ -67,6 +67,12 @@ zhijin-server/
       <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
       <version>3.5.15</version>
     </dependency>
+    <!-- JSqlParser 绑定(3.5.9+ 拆分独立构件, 提供 TenantLineInnerInterceptor/PaginationInnerInterceptor) -->
+    <dependency>
+      <groupId>com.baomidou</groupId>
+      <artifactId>mybatis-plus-jsqlparser-4.9</artifactId>
+      <version>3.5.15</version>
+    </dependency>
     <!-- PostgreSQL 驱动 -->
     <dependency>
       <groupId>org.postgresql</groupId>

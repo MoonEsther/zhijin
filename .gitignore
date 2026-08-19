@@ -1,0 +1,24 @@
+# --- 通用 ---
+.idea/
+*.iml
+.DS_Store
+*.log
+
+# --- Kotlin/Maven ---
+zhijin-server/target/
+zhijin-server/**/target/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# --- Node/前端 ---
+node_modules/
+dist/
+*.local
+
+# --- 部署本地环境 ---
+deploy/.env

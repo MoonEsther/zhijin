@@ -10,9 +10,11 @@ import com.zhijin.common.web.ResultCode
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.oauth2.jwt.JwtClaimsSet
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters
+import org.springframework.stereotype.Service
 import java.time.Instant
 
 /** 认证服务：管理端登录/刷新，签发携带租户与角色的 JWT。 */
+@Service
 class AuthService(
     private val userRepository: SysUserRepository,
     private val jwtConfig: JwtConfig,

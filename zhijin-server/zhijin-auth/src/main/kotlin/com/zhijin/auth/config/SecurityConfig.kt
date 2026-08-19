@@ -11,6 +11,13 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
+import org.springframework.security.crypto.password.PasswordEncoder
+import org.springframework.security.oauth2.core.AuthorizationGrantType
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod
+import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
@@ -29,6 +36,25 @@ import com.zhijin.auth.web.JwtTenantFilter
 @EnableWebSecurity
 @EnableMethodSecurity
 class SecurityConfig {
+
+    // ---------- 密码编码器：AuthService 校验登录密码使用 ----------
+    @Bean
+    fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder()
+
+    // ---------- OAuth2 客户端注册表：授权服务器链需要该 Bean 才能装配 ----------
+    // 平台走自定义 /auth/login 签发 JWT，此客户端为占位实现，满足框架装配要求。
+    @Bean
+    fun registeredClientRepository(): RegisteredClientRepository {
+        val client = RegisteredClient.withId("zhijin-server")
+            .clientId("zhijin-server")
+            .clientSecret("{noop}zhijin-secret")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+            .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+            .scope("openid")
+            .build()
+        return InMemoryRegisteredClientRepository(client)
+    }
 
     // ---------- 链 1：OAuth2 授权服务器端点 ----------
     @Bean

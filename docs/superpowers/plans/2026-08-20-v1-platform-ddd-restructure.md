@@ -6,7 +6,7 @@
 
 **Architecture:** 每模块按依赖规则分层：`interfaces`（HTTP 边界，薄控制器 + DTO）→ `application`（应用服务/用例编排 + 事务）→ `domain`（富血实体/值对象/聚合/仓储接口/领域服务，**零 Spring/MyBatis 依赖**，纯 Kotlin）→ `infrastructure`（MyBatis-Plus 实现仓储、外部客户端适配器、配置）。依赖箭头严格向内；仓储接口在 domain，实现放 infrastructure（依赖倒置，DIP）。
 
-> **版本说明（2026-08-20 v2）**：本版已按 `docs/superpowers/feedback/2026-08-20-v1-platform-ddd-restructure-feedback.md` 审核反馈修订（包名 `interface`→`interfaces`、命名统一保留 App、publish 保留版本快照、补全 ApiKey/Version 聚合示例、HttpModelComponent 归属修正等）。
+> **版本说明（2026-08-20 v3）**：v2 按审核反馈修订（包名 `interfaces`、命名保留 App、publish 保留快照、ApiKey 拦截器绕过、HttpModelComponent 归属等）；v3 按 v2 复审反馈再修订（K1 `AppRecord.id` 改 var 保证自增回填、K2 Mapper 保留原包不移动、K4 补 publishBy、K5 状态显式映射、K6 dto 整体移动、K8 CryptoService 接口归 domain、K9 并发注记、K10 测试数修正、K3 去行内署名）。
 
 **Tech Stack:** Kotlin 2.2 · Spring Boot 4 · MyBatis-Plus（仅 infrastructure 层）· 既有模块
 
@@ -50,8 +50,11 @@ zhijin-app/src/main/kotlin/com/zhijin/app/
     ├── persistence/
     │   ├── AppRecord.kt           ← 持久化模型（原 App 贫血实体，含 createBy）
     │   └── AppRepositoryImpl.kt   ← 用 AppMapper 实现 AppRepository
-    ├── mapper/                    ← MyBatis-Plus Mapper（原 mapper）
     └── crypto/                    ← CryptoServiceImpl（加密适配器）
+
+    # Mapper 决策（K2）：com.zhijin.app.mapper 保持不变（不移动到 infrastructure）
+    # —— @MapperScan(basePackages=[...,"com.zhijin.app.mapper",...]) 在 framework 硬编码，
+    #    移动会导致 Mapper 不注册、启动失败。持久化实现(AppRepositoryImpl)在 persistence 引用它即可，依赖仍向内。
 ```
 
 **依赖规则**：`domain` 不 import 框架；`interfaces` 只依赖 `application` + `common.web`；`application` 依赖 `domain`（+必要时 infrastructure）；`infrastructure` 依赖 `domain` + 框架。
@@ -131,6 +134,7 @@ data class AppVersion(
     val workflowDsl: String?,
     val modelSnapshot: String?,
     val status: Int = 1,
+    val publishBy: Long?,          // 对应 app_version.publish_by 列
     val publishTime: LocalDateTime?,
 )
 ```
@@ -149,8 +153,9 @@ import java.time.LocalDateTime
 /** 持久化记录（贫血，仅 infrastructure 用；由原 App 实体改造，保留 create_by 列）。 */
 @TableName("app")
 data class AppRecord(
+    // 注意：id 必须 var —— MyBatis-Plus IdType.AUTO 靠反射 setter 回填自增主键，val 无 setter 回填失败
     @TableId(type = IdType.AUTO)
-    val id: Long? = null,
+    var id: Long? = null,
     var tenantId: Long? = null,
     var appKey: String = "",
     var name: String = "",
@@ -166,7 +171,9 @@ data class AppRecord(
     fun toDomain(): App = App(
         id = id, tenantId = tenantId!!, appKey = appKey, name = name,
         description = description, iconUri = iconUri,
-        status = AppStatus.entries.firstOrNull { it.ordinal == status } ?: AppStatus.DRAFT,
+        // 显式映射：未知状态抛异常，避免脏数据静默回退草稿
+        status = when (status) { 0 -> AppStatus.DRAFT; 1 -> AppStatus.PUBLISHED; 2 -> AppStatus.OFFLINE;
+                                  else -> throw IllegalStateException("未知应用状态: $status") },
         createBy = createBy, createTime = createTime, updateTime = updateTime,
     )
 
@@ -218,7 +225,6 @@ Expected: `BUILD SUCCESS`（新旧代码并存过渡：旧 service 暂留，新 
 git add zhijin-server/zhijin-app/src/main/kotlin/com/zhijin/app/domain/ zhijin-server/zhijin-app/src/main/kotlin/com/zhijin/app/infrastructure/
 git commit -m "refactor(ddd): zhijin-app 领域模型与仓储(示范)"
 ```
-（末尾加 `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`）
 
 ### Task B: 迁移应用服务 + 接口层
 
@@ -284,7 +290,7 @@ class AppApplicationService(
         val version = versionRepository.save(
             AppVersion(
                 id = null, tenantId = tenantId, appId = id, versionNo = next,
-                workflowDsl = null, modelSnapshot = null, status = 1,
+                workflowDsl = null, modelSnapshot = null, status = 1, publishBy = null,
                 publishTime = LocalDateTime.now(),
             )
         )
@@ -294,6 +300,7 @@ class AppApplicationService(
 }
 ```
 > **发布语义与现有 `PublishService` 完全一致**：允许重复发布、version_no 自增、插入不可变快照、状态置 published。响应返回 `AppVersion`（接口层映射为 `AppVersionResponse`，契约不变）。
+> **并发注记（K9）**：`nextVersionNo = selectCount + 1` 无并发保护（沿袭现有实现，不回归）；并发发布会撞 `uk_av_app_version` 唯一索引，V1 接受，后续用乐观锁/唯一索引兜底。
 
 - [ ] **Step 2: 建 `interfaces/AppController.kt`（薄控制器）**
 
@@ -344,7 +351,7 @@ class AppController(private val service: AppApplicationService) {
 - [ ] **Step 3: 迁移剩余聚合（ModelConfig / ApiKey）**
 
 **ModelConfig 聚合**（原 ModelConfigService + CryptoService）：
-- `domain/modelconfig/`：`ModelProviderKey`、`AppModelConfig` 富血实体 + `ModelConfigRepository` 接口。
+- `domain/modelconfig/`：`ModelProviderKey`、`AppModelConfig` 富血实体 + `ModelConfigRepository` 接口 + **`CryptoService` 接口（K8：领域服务接口放 domain）**。
 - `infrastructure/crypto/CryptoServiceImpl.kt`：实现 `CryptoService`（`encrypt/decrypt`，AES-256-GCM）——加密适配器归 infra。
 - `application/ModelConfigApplicationService.kt`：addProviderKey（加密落库）、getPlainKey（解密）、saveConfig（upsert）。
 
@@ -360,7 +367,9 @@ class AppController(private val service: AppApplicationService) {
 - [ ] **Step 5: 删除旧代码 + 测试迁移**
 
 删除：`service/AppService.kt`、`service/ModelConfigService.kt`、`service/PublishService.kt`、`service/AppApiKeyService.kt`、`service/CryptoService.kt`、原 `controller/*`、贫血 `entity/App.kt` 等（App 已转 AppRecord）。
-> 注意：`zhijin-framework` 的 `MybatisPlusConfig.@MapperScan` 仍扫描 `com.zhijin.app.mapper`——Mapper 包路径不变，保留。
+> **dto 移动（K6）**：`dto` 包整体**移动**（非删除）到 `interfaces/dto`——`AppRequest`/`AppResponse`/`AppVersionResponse`/`ProviderKeyRequest`/`ModelConfigRequest`/`ApiKeyResponse` 等，包名 `com.zhijin.app.dto` → `com.zhijin.app.interfaces.dto`，并更新所有 import（含测试）。
+> **Mapper 决策（K2）**：`com.zhijin.app.mapper` 保持不变（`@MapperScan` 硬编码该路径），`AppMapper` 泛型由 `BaseMapper<App>` 改为 `BaseMapper<AppRecord>`（K7）。
+> 注意：`zhijin-framework` 的 `MybatisPlusConfig.@MapperScan` 仍扫描 `com.zhijin.app.mapper`——不变。
 
 测试迁移：
 - `AppServiceTest` → `AppApplicationServiceTest`（mock AppRepository/AppVersionRepository，验证 create/get/update/delete/publish + 归属校验 403）。
@@ -412,7 +421,7 @@ git commit -m "refactor(ddd): zhijin-app 迁移到 DDD 四层(示范完成)"
   - **承认（M4）**：`zhijin-orchestrator/pom.xml` 依赖 common + framework + ai-client（Spring 全家桶传递）；仅**引擎核心代码**（model/executor/scheduler/nodes）未用 Spring 注解、为纯 Kotlin。
   - 包重组：`model`（NodeSchema/WorkflowSchema/值对象）→ `domain`；`executor`/`scheduler`/`nodes` → `domain`（领域服务/策略）或 `application`；`dsl`（WorkflowParser）→ `infrastructure`（解析适配器）；`context`（VariableStore）→ `domain` 或 `application`。
   - `HttpModelComponent` 在 orchestrator 模块 → 归 `infrastructure.model`（外部模型客户端适配器）。
-  - 验证：orchestrator 17 测试全绿 + 全量构建。
+  - 验证：orchestrator 全部测试 + 全量构建。
 - [ ] **提交**：`refactor(ddd): zhijin-orchestrator 包重组`
 
 ---

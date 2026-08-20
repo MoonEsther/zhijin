@@ -30,5 +30,12 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- 协程测试工具：runTest（test 作用域不传递，需本模块显式声明） -->
+    <dependency>
+      <groupId>org.jetbrains.kotlinx</groupId>
+      <artifactId>kotlinx-coroutines-test</artifactId>
+      <version>1.8.0</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>

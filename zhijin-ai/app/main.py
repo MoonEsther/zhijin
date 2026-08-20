@@ -2,8 +2,11 @@
 from fastapi import FastAPI
 
 from .config import load_config
+from .routes import chat as chat_route
 
 app = FastAPI(title="zhijin-ai", version="0.1.0")
+
+app.include_router(chat_route.router)
 
 config = load_config()
 

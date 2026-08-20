@@ -5,8 +5,10 @@ import com.zhijin.auth.repository.SysUserMapper
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.userdetails.UserDetailsService
 import org.springframework.security.core.userdetails.UsernameNotFoundException
+import org.springframework.stereotype.Service
 
 /** 从 sys_user 表加载用户并包装为携带租户 ID 的 UserDetails。 */
+@Service
 class UserDetailsServiceImpl(
     private val userMapper: SysUserMapper,
 ) : UserDetailsService {

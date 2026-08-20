@@ -20,9 +20,26 @@
       <groupId>com.zhijin</groupId>
       <artifactId>zhijin-framework</artifactId>
     </dependency>
+    <!-- Spring Web：RestClient 发起 HTTP 调用（版本由父 POM BOM 管理） -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-web</artifactId>
+    </dependency>
+    <!-- Jackson3 Kotlin 模块：Kotlin data class 的 JSON 反序列化（RestClient 默认 JSON 转换器依赖） -->
+    <dependency>
+      <groupId>tools.jackson.module</groupId>
+      <artifactId>jackson-module-kotlin</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- MockWebServer：本地模拟 Python OpenAI 兼容接口 -->
+    <dependency>
+      <groupId>com.squareup.okhttp3</groupId>
+      <artifactId>mockwebserver</artifactId>
+      <version>4.12.0</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

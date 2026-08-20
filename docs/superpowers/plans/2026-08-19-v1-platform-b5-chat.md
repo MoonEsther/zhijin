@@ -867,3 +867,19 @@ git commit -m "docs(plans): B5 追加执行修正记录"
 ## 执行交接
 
 B5 完成后 → **B6 用量统计 + 审计**（zhijin-billing-audit：token 用量落账 + 审计日志），然后 **计划 C（AI 服务模型网关真实供应商）** 替换 Python 桩。
+
+---
+
+## 执行修正记录（2026-08-20 实现期间的真实发现，均已落地并验证）
+
+| # | 修正 | 原因 |
+|---|---|---|
+| 1 | **循环依赖**：zhijin-chat→zhijin-app 会成环，用 `ApiKeyResolver` 函数式接口 + app 侧适配 Bean 解耦 | zhijin-app 聚合依赖 chat，chat 再依赖 app 即 Maven 循环 |
+| 2 | `findByPlainKey` 反查需 `@InterceptorIgnore(tenantLine="true")` + `findByHash` Mapper 方法 | 认证时租户未知（Key 即租户来源），租户拦截器会注入 `tenant_id=0` |
+| 3 | `AiClient` RestClient 需注册 Jackson 3 `KotlinModule`（`KotlinModule.Builder()`）+ `registerDefaults()` 先于 `withJsonConverter` | Boot 4 用 Jackson 3；`KotlinModule()` 直接调用解析到 private 构造器编译失败；转换器注册顺序错则列表为空 |
+| 4 | `kotlinx-coroutines-test` 需在 zhijin-chat 单独声明（test-scope 非传递） | orchestrator 的 test 依赖不传给 chat |
+| 5 | Kotlin 嵌套注释：KDoc 里 `/v1/**` 的 `/**` 触发未闭合注释 | 注释措辞避开 `/**` 序列 |
+| 6 | `FilterRegistrationBean.filter` 需 `setFilter(...)` | Kotlin 2.2 + Boot 4 下视为只读 val |
+| 7 | Windows 控制台 GBK 导致 curl 中文 body `Invalid UTF-8`（联调环境问题） | 非应用缺陷；联调用 UTF-8 文件传 body |
+
+> **端到端验收**：`POST /v1/chat`（X-API-Key）→ API Key 鉴权 → 会话 → 默认工作流 → HttpModelComponent → AiClient → Python 桩 → **SSE `data: echo: hello world`**，chat_session + chat_message 双表落库（user + assistant）验证通过。

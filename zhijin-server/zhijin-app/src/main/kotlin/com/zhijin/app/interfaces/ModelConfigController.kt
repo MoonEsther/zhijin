@@ -1,7 +1,7 @@
-package com.zhijin.app.controller
+package com.zhijin.app.interfaces
 
-import com.zhijin.app.dto.ModelConfigRequest
-import com.zhijin.app.service.ModelConfigService
+import com.zhijin.app.application.ModelConfigApplicationService
+import com.zhijin.app.interfaces.dto.ModelConfigRequest
 import com.zhijin.common.web.Result
 import com.zhijin.framework.tenant.TenantContextHolder
 import jakarta.validation.Valid
@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController
 /** 应用模型配置端点（/api/apps/{id}/model-config）。 */
 @RestController
 @RequestMapping("/api/apps")
-class ModelConfigController(private val modelConfigService: ModelConfigService) {
+class ModelConfigController(private val modelConfigService: ModelConfigApplicationService) {
 
     private val tenantId: Long get() = TenantContextHolder.getRequiredTenantId()
 

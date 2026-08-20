@@ -1,13 +1,13 @@
 package com.zhijin.app
 
-import com.zhijin.app.service.CryptoService
+import com.zhijin.app.infrastructure.crypto.CryptoServiceImpl
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
 
 class CryptoServiceTest {
 
-    private val crypto = CryptoService()
+    private val crypto = CryptoServiceImpl()
 
     @Test
     fun `AES加密后能解密还原`() {

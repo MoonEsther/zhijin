@@ -1,4 +1,4 @@
-package com.zhijin.app.dto
+package com.zhijin.app.interfaces.dto
 
 import jakarta.validation.constraints.NotBlank
 

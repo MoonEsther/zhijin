@@ -2,13 +2,13 @@ package com.zhijin.app.mapper
 
 import com.baomidou.mybatisplus.annotation.InterceptorIgnore
 import com.baomidou.mybatisplus.core.mapper.BaseMapper
-import com.zhijin.app.entity.AppApiKey
+import com.zhijin.app.infrastructure.persistence.AppApiKeyRecord
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 import org.apache.ibatis.annotations.Select
 
 @Mapper
-interface AppApiKeyMapper : BaseMapper<AppApiKey> {
+interface AppApiKeyMapper : BaseMapper<AppApiKeyRecord> {
 
     /**
      * 按明文 Key 的 SHA-256 哈希反查 API Key（开放 API /v1 鉴权用）。
@@ -17,6 +17,5 @@ interface AppApiKeyMapper : BaseMapper<AppApiKey> {
      */
     @InterceptorIgnore(tenantLine = "true")
     @Select("SELECT * FROM app_api_key WHERE key_hash = #{hash} LIMIT 1")
-    fun findByHash(@Param("hash") hash: String): AppApiKey?
+    fun findByHash(@Param("hash") hash: String): AppApiKeyRecord?
 }
-

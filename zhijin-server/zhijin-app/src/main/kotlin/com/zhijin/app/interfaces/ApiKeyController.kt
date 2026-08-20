@@ -1,7 +1,7 @@
-package com.zhijin.app.controller
+package com.zhijin.app.interfaces
 
-import com.zhijin.app.dto.ApiKeyResponse
-import com.zhijin.app.service.AppApiKeyService
+import com.zhijin.app.application.ApiKeyApplicationService
+import com.zhijin.app.interfaces.dto.ApiKeyResponse
 import com.zhijin.common.web.Result
 import com.zhijin.framework.tenant.TenantContextHolder
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController
 /** 应用 API Key 端点（/api/apps/{id}/api-keys）：生成与吊销。 */
 @RestController
 @RequestMapping("/api/apps")
-class ApiKeyController(private val apiKeyService: AppApiKeyService) {
+class ApiKeyController(private val apiKeyService: ApiKeyApplicationService) {
 
     // 租户号统一取自上下文过滤器，防止跨租户越权
     private val tenantId: Long get() = TenantContextHolder.getRequiredTenantId()

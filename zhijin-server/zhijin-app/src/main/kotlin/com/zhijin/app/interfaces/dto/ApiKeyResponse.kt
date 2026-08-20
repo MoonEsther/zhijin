@@ -1,4 +1,4 @@
-package com.zhijin.app.dto
+package com.zhijin.app.interfaces.dto
 
 /** API Key 创建响应：plainKey 仅此一次返回（DB 只存哈希，不再可恢复明文）。 */
 data class ApiKeyResponse(

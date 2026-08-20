@@ -319,7 +319,7 @@ cd ../zhijin-web && npm run build
 ```
 ```bash
 cd C:\mypro\JavaProject\zhijin
-git add zhijin-web/ zhijin-server/zhijin-app/ zhijin-server/zhijin-orchestrator/
+git add zhijin-web/ zhijin-server/zhijin-app/
 git commit -m "feat(web): API 客户端 + 应用列表页(后端补列表端点)"
 ```
 
@@ -419,7 +419,7 @@ git commit -m "feat(web): React Flow 画布 + 应用详情页(Tabs)"
   - Create: `zhijin-server/zhijin-auth/.../domain/role/`（Role + RoleRepository）、`domain/permission/`（Permission + PermissionRepository）
   - Create: `zhijin-server/zhijin-auth/.../application/RbacApplicationService.kt`
   - Create: `zhijin-server/zhijin-auth/.../interfaces/RbacController.kt`
-  - Modify: `zhijin-server/zhijin-app/.../seeder/AdminSeeder.kt`（创建 admin 角色 + 全权限 + 分配）
+  - Modify: `zhijin-server/zhijin-auth/.../seeder/AdminSeeder.kt`（R2 修订：AdminSeeder 在 zhijin-auth 模块，不在 zhijin-app；创建 admin 角色 + 全权限 + 分配）
 
 - [ ] **Step 1: 用量/审计 API + 页面**（同前）
 
@@ -517,9 +517,36 @@ git commit -m "feat(web): 用量/审计页 + RBAC后端(权限点/@PreAuthorize/
 - Modify: `auth/userStore.ts`（登录后存 perms）、`components/AppLayout.tsx`（菜单按 perms 过滤）
 - Create: `pages/UserManagePage.tsx`、`pages/RoleManagePage.tsx`
 
-- [ ] **Step 1: RBAC API + 用户身份**
+- [ ] **Step 1: RBAC API + 用户身份（R1 修订：/auth/validate 不走 /api BASE）**
 
-`api/auth.ts`：`GET /auth/validate` → `{ username, userId, tenantId, roles, perms }`（登录后调，存 userStore）。
+`api/auth.ts`：**`/auth/validate` 不在 `/api` 下**（后端 `AuthController` 是 `@RequestMapping("/auth")`），直接 fetch 带 Bearer：
+```ts
+import { tokenStore } from '../auth/tokenStore';
+
+export interface UserInfo { username: string; userId: number | null; tenantId: number | null; roles: string[]; perms: string[] }
+
+/** /auth/validate 不走 /api BASE（R1：路径是 /auth/validate 不是 /api/auth/validate）。 */
+export async function fetchUserInfo(): Promise<UserInfo> {
+  const resp = await fetch('/auth/validate', {
+    headers: { Authorization: `Bearer ${tokenStore.get()}` },
+  });
+  if (resp.status === 401) { tokenStore.clear(); window.location.href = '/login'; throw new Error('未认证'); }
+  const body = await resp.json();
+  if (body.code !== 0) throw new Error(body.message || '获取用户信息失败');
+  return body.data as UserInfo;
+}
+```
+
+**vite 代理补 `/auth`**（R1）：
+```ts
+proxy: {
+  '/api': { target: 'http://localhost:8080', changeOrigin: true },
+  '/oauth2': { target: 'http://localhost:8080', changeOrigin: true },
+  '/login': { target: 'http://localhost:8080', changeOrigin: true },
+  '/error': { target: 'http://localhost:8080', changeOrigin: true },
+  '/auth': { target: 'http://localhost:8080', changeOrigin: true },   // R1：/auth/validate 需要代理
+}
+```
 
 **后端配合**：`ValidateResponse` 加 `perms: List<String>` 字段（当前只有 roles），`AuthApplicationService.validate` 从 JWT claims 读 `perms`：
 ```kotlin
@@ -535,7 +562,7 @@ data class ValidateResponse(
 perms = (claims["perms"] as? List<*>)?.map { it.toString() } ?: emptyList(),
 ```
 
-`api/rbac.ts`：`permissions()` / `roles` CRUD / `users` / `assignRoles(userId, roleIds)`。
+`api/rbac.ts`：`permissions()` / `roles` CRUD / `users` / `assignRoles(userId, roleIds)`（走 /api BASE，`request()` 封装）。
 
 - [ ] **Step 2: 菜单按 perms 过滤**
 

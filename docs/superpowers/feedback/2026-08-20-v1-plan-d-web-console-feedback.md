@@ -1,89 +1,85 @@
-# Plan D：前端控制台 审核反馈
+# Plan D：前端控制台 审核反馈（v2 复审）
 
-> **关联计划:** [`docs/superpowers/plans/2026-08-20-v1-plan-d-web-console.md`](../plans/2026-08-20-v1-plan-d-web-console.md)
+> **关联计划:** [`docs/superpowers/plans/2026-08-20-v1-plan-d-web-console.md`](../plans/2026-08-20-v1-plan-d-web-console.md)（v2 版，含方案 C 完整 RBAC）
 >
-> **审核方式:** 计划与当前代码/配置逐条对照——B2 重构后的 `ClientRepositoryConfig.kt`（zhijin-console 注册）、`AdminSeeder.kt`（默认账号）、`vite.config.ts`（代理）、orchestrator `NodeType.kt`/`Connection.kt`/`WorkflowParser`（DSL 结构）、B3/B6 后端接口契约。
+> **审核方式:** v2 计划与当前代码逐条对照——`ClientRepositoryConfig.kt`（公共客户端改造目标）、`vite.config.ts`、`AuthController.kt`（/auth/validate 实际路径）、`ValidateResponse.kt`（当前字段）、V1 迁移 SQL（RBAC 表）、`SecurityConfig.kt`（@EnableMethodSecurity）、`AdminSeeder.kt`（所在模块）。
 >
-> **结论:** 整体设计合理（React Flow 画布、TanStack Query、PKCE 流程、页面划分、TDD DSL 转换），但 **OAuth2 登录链路有 2 个阻塞级问题**（token 交换必失败、dev 代理缺失），不修登录流程走不通；另有 2 个中等问题。修完即可执行。
+> **结论:** 上轮 D1/D2/D3/D4/D7 已全部修复，且与代码吻合；新增 RBAC（方案 C）整体设计正确（表已存在、方法安全已启用、JWT converter 方案可行）。**剩 1 个中等问题**（R1：/auth/validate 路径与代理不匹配，perms 获取会 404）和 2 处小笔误（R2/R3）。修完即可执行。
 
 ---
 
-## 1. 总体判定
+## 1. 上轮反馈（D1~D10）闭环复核
 
-| 维度 | 判定 | 说明 |
+| 项 | v2 处理 | 复核 |
 |---|---|---|
-| 技术选型 | ✅ 合理 | React Flow 12（Coze/Dify 同型）、TanStack Query v5、antd 5、vitest TDD |
-| 页面/路由划分 | ✅ 合理 | 登录/回调/列表/详情(Tabs)/用量/审计，覆盖 V1 全流程 |
-| 后端契约对齐 | ⚠️ 大部分正确 | scope openid/profile ✅、redirect_uri ✅、/api 路径 ✅、admin/admin123 ✅（AdminSeeder 默认）；但 token 认证方式不匹配（D1） |
-| OAuth2 登录链路 | ❌ **需先修订** | D1（client_secret 认证矛盾）+ D2（vite 代理缺失）→ 登录走不通 |
-| 可执行性 | ❌ **需先修订** | 修 D1/D2 后可执行 |
+| D1 token 认证不匹配 | ✅ zhijin-console 改公共客户端（去 secret + NONE，L18、Task 1 Step 2）；exchangeCode 无 secret（L171~185） | 通过（保留 requireProofKey(true) + redirectUri + scopes） |
+| D2 vite 代理缺失 | ✅ 加 `/oauth2`、`/login`、`/error`（L116~123） | 通过 |
+| D3 query v5 对象形式 | ✅ `invalidateQueries({ queryKey: ['apps'] })`（L307） | 通过 |
+| D4 DSL 格式不一致 | ✅ 明确「V1 前端内部草稿格式」，Self-Review 不再声称与 §7.2 一致（L27、L225、L588） | 通过 |
+| D7 challenge 缺失 | ✅ 跳转 URL 带 `code_challenge` + `code_challenge_method=S256`（L154~166） | 通过 |
+| D5/D6/D8~D10 | ⚠️ D5（commit 含 orchestrator）未修，见 R3；其余轻微项未处理（可接受） | — |
 
 ---
 
-## 2. 阻塞级问题（必须改，否则登录流程必失败）
+## 2. 新增 RBAC（方案 C）核实结论
 
-### D1. token 交换必失败：前端不带 client_secret，但服务器端 zhijin-console 是 CLIENT_SECRET_BASIC
-- **计划位置:** 关键决策 L17「client_secret 不放前端（公共客户端 + PKCE）」+ Task 1 Step 2 `exchangeCode`（L125~139，只发 client_id/code/code_verifier，无 secret）。
-- **现状（已核实）:** `ClientRepositoryConfig.kt` L30~31：zhijin-console 注册了 `clientSecret(BCrypt("console-secret"))` + `ClientAuthenticationMethod.CLIENT_SECRET_BASIC`——**不是公共客户端**。token 端点（/oauth2/token）按 BASIC 认证校验 → 前端不带 secret → **401 invalid_client，token 交换必失败**。
-- **修订（二选一，推荐①）:**
-  - ① 服务器端改：zhijin-console 去掉 `clientSecret`，认证方式改 `ClientAuthenticationMethod.NONE`（`requireProofKey(true)` 已设置 ✅ 保持）——真正的 PKCE 公共客户端，与计划「不放 secret」决策一致。**本计划 Task 需加一条后端改动**（`ClientRepositoryConfig.kt`），否则登录无法工作；
-  - ② 前端带 `client_secret: 'console-secret'`——与「不放前端」决策相悖且 secret 形同虚设（不推荐）。
-
-### D2. vite 代理缺失：`/oauth2` 与 `/login` 未代理，dev 下登录 404
-- **计划位置:** Task 1 Step 1「vite.config.ts（加 react plugin 已有）」——未提代理。
-- **现状（已核实）:** `vite.config.ts` 只代理 `/api`（L10）。而计划前端跳转 `window.location.href = '/oauth2/authorize?...'`（L113）与 `fetch('/oauth2/token')`（L126）都是 **5173 同源路径**——vite 无 `/oauth2` 代理 → **404**。
-- **连带:** Spring 表单登录页是 `/login`（302 跳转 + POST 提交），同样需要代理；登录失败错误页 `/error` 也建议代理。
-- **修订:** vite.config.ts 的 proxy 增加 `'/oauth2'`、`'/login'`、`'/error'`（均 target 8080）。注意：不能只把 authorize 跳转改成绝对地址 8080——token 交换 fetch 跨端口会触发 CORS（OAuth2 token 端点默认无 CORS），且表单登录 session cookie 依赖同源代理最稳妥。
-- **验收点:** dev 下浏览器访问 `http://localhost:5173/oauth2/authorize?...` 应 302 到 Spring 表单登录页。
-
----
-
-## 3. 中等问题
-
-| # | 位置 | 问题 | 建议 |
-|---|---|---|---|
-| D3 | Task 2 Step 3（L361） | TanStack Query **v5** 中 `invalidateQueries(['apps'])` 数组形式已废弃，应为 `invalidateQueries({ queryKey: ['apps'] })`（v5 只接受对象过滤条件） | 改对象形式 |
-| D4 | Task 1 Step 7 `toDsl`/`fromDsl` + Self-Review L516 | 前端 DSL 结构与后端 §7.2 格式**并不一致**：后端 `Connection(fromNode, toNode)`（`Connection.kt` L4，JSON 字段 fromNode/toNode），前端输出 `{from, to}`；且 nodes 只有 `{id, type, config}`，**无 inputs/outputs**（后端 LLM 节点必须有 prompt 输入才能运行）。Self-Review「toDsl 输出 ↔ §7.2 DSL 格式一致」不成立 | V1 画布 DSL 只存 localStorage 不落后端——可接受，但计划应**明确标注「V1 为前端内部草稿格式，后端 DSL 对接留 V2」**，并修正 Self-Review 表述；或补 inputs 结构（LLM 节点带 `{prompt: {source: literal}}`） |
-
----
-
-## 4. 轻微项（可不改）
-
-| # | 说明 |
+| 检查点 | 结果 |
 |---|---|
-| D5 | Task 2 Step 5 commit 范围含 `zhijin-server/zhijin-orchestrator/`（L376）——列表端点改动不涉及 orchestrator，疑为笔误，可去掉 |
-| D6 | `redirect_uri = ${window.location.origin}/callback` 与服务器端注册的 `http://localhost:5173/callback` 在 dev 一致 ✅；部署到其他 origin 时需同步改 `ClientRepositoryConfig` 注册——注明即可 |
-| D7 | PKCE challenge 生成代码（generateChallenge）存在但 `redirectToAuthorize` 的跳转 URL **未带 `code_challenge`/`code_challenge_method` 参数**（L113~121）——服务器端 `requireProofKey(true)` 会拒绝无 challenge 的授权请求！**此点应并入 D1 一起修**：跳转 URL 需补 `code_challenge` 与 `code_challenge_method=S256`（计划 L142 注释说改 async 并 await challenge，但示例代码没体现——需真正把 challenge 拼进 URL） |
-| D8 | `exchangeCode` 的 `redirect_uri` 参数必须与 authorize 请求一致 ✅（同一常量） |
-| D9 | token 存 localStorage 的 XSS 风险 V1 接受 ✅ 已注明 |
-| D10 | vitest 纯函数测试无需 jsdom 配置 ✅（dsl.test.ts 无 DOM 依赖），`npx vitest run` 可直接跑 |
+| RBAC 表（sys_role / sys_user_role / sys_permission / sys_role_permission） | ✅ **V1 迁移已建齐**（`V1__base_schema.sql`），无需新迁移 |
+| @EnableMethodSecurity | ✅ `SecurityConfig.kt` 已启用 |
+| JwtAuthenticationConverter（perms claim → authorities，空前缀） | ✅ 方案正确（`setAuthoritiesClaimName("perms")` + `setAuthorityPrefix("")`；注意：permissions 接管后 scope 权限不再解析，V1 预期行为） |
+| 权限点字符串 ↔ 前端 hasPerm ↔ @PreAuthorize | ✅ 一致（10 个权限点） |
+| RbacController 依赖方向 | ✅ 全在 zhijin-auth 模块内，无跨模块循环 |
+| /auth/validate 加 perms | ✅ `ValidateResponse.kt` 当前为 username/userId/tenantId/roles（L4~9），加 perms 字段吻合 |
+| AdminSeeder 增强 | ⚠️ **文件路径写错**（见 R2） |
 
 ---
 
-## 5. 修订清单（按 Task 组织）
+## 3. 剩余问题
+
+### R1（中）：`/auth/validate` 路径不在 `/api` 下，前端经 `request()` 封装会拼错 + vite 代理缺 `/auth`
+- **现状（已核实）:** `AuthController` 是 `@RequestMapping("/auth")` + `@GetMapping("/validate")`（`interfaces/AuthController.kt` L17~21）——**路径是 `/auth/validate`，不是 `/api/auth/validate`**。
+- **计划:** Task 5 Step 1 `api/auth.ts` 写「GET /auth/validate」（L522），且 `api/client.ts` 的 `BASE = '/api'`（L251）——若用 `request('/auth/validate')` 会请求 `/api/auth/validate` → **404**；若直接 fetch('/auth/validate')，vite 代理（L116~123）**没有 `/auth`** → 同样 404。
+- **修订（二选一）:**
+  - ① 前端 `api/auth.ts` 直接 `fetch('/auth/validate')`（带 Bearer，不走 /api BASE），**vite 代理增加 `'/auth'`**；
+  - ② 后端 AuthController 加 `/api` 前缀（改动后端契约，影响既有测试）。
+  - 推荐①，并把 fetch 写法写进计划（当前只有一句描述，无代码）。
+
+### R2（轻-中）：Task 4 文件清单里 AdminSeeder 路径写错
+- **计划位置:** L422「Modify: `zhijin-server/zhijin-app/.../seeder/AdminSeeder.kt`」。
+- **现状（已核实）:** `AdminSeeder.kt` 在 **zhijin-auth** 模块（`zhijin-auth/src/main/kotlin/com/zhijin/auth/seeder/AdminSeeder.kt`）。
+- **修订:** 改为 `zhijin-server/zhijin-auth/.../seeder/AdminSeeder.kt`。
+
+### R3（轻）：Task 2 Step 5 commit 范围仍含 orchestrator（上轮 D5 未修）
+- **计划位置:** L322 `git add zhijin-web/ zhijin-server/zhijin-app/ zhijin-server/zhijin-orchestrator/`。
+- **说明:** 列表端点改动不涉及 orchestrator，去掉即可。
+
+### R4（轻，实现提示）：userStore 的 perms 过滤不触发 React 重渲染
+- 菜单/按钮权限过滤若直接同步读 localStorage（`userStore.hasPerm`），登录回调写入后**不会自动刷新 UI**（需刷新页面）。建议用 React Context/state 承载用户信息（或登录后 `window.location.reload()` 兜底）。非阻塞，执行时注意。
+
+---
+
+## 4. 修订清单（按 Task 组织）
 
 | 位置 | 修订动作 |
 |---|---|
-| 全局/关键决策 | ① 明确 zhijin-console 为公共客户端（NONE 认证）或前端带 secret，二者取一（D1） |
-| Task 1 Step 1 | ② vite proxy 增加 `/oauth2`、`/login`、`/error`（D2） |
-| Task 1 Step 2 | ③ `redirectToAuthorize` 真正生成并把 `code_challenge` + `code_challenge_method=S256` 拼入 URL（D7）；④ `exchangeCode` 按 D1 决策补/不补 secret |
-| Task 1 Step 7 | ⑤ 标注 V1 DSL 为前端内部草稿格式（D4）；⑥ Self-Review 表述修正 |
-| Task 2 Step 3 | ⑦ `invalidateQueries` 改对象形式（D3） |
-| Task 2 Step 5 | ⑧ commit 范围去掉 orchestrator（D5，可选） |
+| Task 5 Step 1 | ① `api/auth.ts` 明确直接 fetch `/auth/validate`（带 Bearer），不走 /api BASE；vite 代理加 `/auth`（R1） |
+| Task 4 文件清单 | ② AdminSeeder 路径改 zhijin-auth（R2） |
+| Task 2 Step 5 | ③ commit 范围去掉 orchestrator（R3，可选） |
+| 全局（可选） | ④ userStore 用 Context/state 承载，登录后刷新菜单（R4） |
 
 ---
 
-## 6. 验证记录（本轮）
+## 5. 验证记录（本轮新增）
 
-- **ClientRepositoryConfig.kt:** L30~31 zhijin-console 有 secret + CLIENT_SECRET_BASIC；L37~42 requireProofKey(true) ✅ + redirectUri L34 + scope L35~36 → D1 成立、D7 的 challenge 缺失会触发 requireProofKey 拒绝。
-- **vite.config.ts:** 仅 `/api` 代理 → D2 成立。
-- **AdminSeeder.kt:** admin / ADMIN_INIT_PASSWORD（默认 admin123）→ 联调账号 admin/admin123 ✅ 正确。
-- **NodeType.kt:** code 值 start/end/llm/tool/if/variable → 前端 NODE_TYPE_MAP ✅ 一致。
-- **Connection.kt:** `Connection(fromNode, toNode)` → 前端 `{from, to}` 字段不一致 → D4 成立。
-- **后端契约:** `/api/apps` CRUD+publish、`/api/apps/{id}/api-keys`、`/api/usage/summary`、`/api/audit-logs` 均与前端 api 封装对齐 ✅；`GET /api/apps` 列表缺失已被计划 Task 2 Step 4 识别并补后端 ✅。
+- **AuthController:** `@RequestMapping("/auth")` + `GET /validate`（`interfaces/AuthController.kt` L17~21）→ R1 成立。
+- **ValidateResponse:** 当前字段 username/userId/tenantId/roles（L4~9）→ 加 perms 与计划吻合 ✅。
+- **V1 迁移:** sys_role / sys_user_role / sys_permission / sys_role_permission 均已建 → RBAC 无需新迁移 ✅。
+- **SecurityConfig:** `@EnableMethodSecurity` 已启用 → @PreAuthorize 可用 ✅。
+- **AdminSeeder:** 位于 `zhijin-auth/.../seeder/` → R2 成立。
 
 ---
 
-## 7. 执行交接
+## 6. 执行交接
 
-修订 D1/D2（+D7）后按 Task 1→4 执行；完成后 V1 全栈可交付，后续 V2：画布增强/RAG/评测/MCP/模板市场。
+修订 R1 后按 Task 1→5 执行；完成后 **V1 全栈可交付**。后续 V2：画布增强、RAG、评测、MCP、模板市场。

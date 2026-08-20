@@ -464,7 +464,24 @@ claims["perms"] = perms  // 权限点列表
 - `GET /api/rbac/users`（用户 + 角色）
 - `PUT /api/rbac/users/{id}/roles`（分配角色）
 
-- [ ] **Step 4: 后端方法级校验（@PreAuthorize）**
+- [ ] **Step 4: 后端方法级校验（@PreAuthorize）+ JWT 权限映射（关键）**
+
+**先配 `JwtAuthenticationConverter`**（`@PreAuthorize` 依赖它从 `perms` claim 提取 authorities——默认只从 `scope` claim 解析且带 `SCOPE_` 前缀）：
+```kotlin
+// SecurityConfig（或独立 config）
+@Bean
+fun jwtAuthenticationConverter(): JwtAuthenticationConverter =
+    JwtAuthenticationConverter().apply {
+        // 从 perms claim 提取权限点，无 SCOPE_ 前缀（对齐 @PreAuthorize("hasAuthority('app:create')")）
+        setJwtGrantedAuthoritiesConverter(JwtGrantedAuthoritiesConverter().apply {
+            setAuthoritiesClaimName("perms")
+            setAuthorityPrefix("")
+        })
+    }
+```
+并在资源服务器链 `oauth2ResourceServer { it.jwt { jwt -> jwt.decoder(...); jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()) } }` 挂上。
+
+> **依赖方向检查**：token customizer 与 JwtAuthenticationConverter 都在 `zhijin-auth` 内；角色/权限仓储（RoleRepository）查询 B1 建的 `sys_role`/`sys_user_role`/`sys_role_permission`/`sys_permission` 表——这些表属于 auth 域，无跨模块循环依赖。
 
 关键接口加注解：
 - `AppController.create/update/delete` → `@PreAuthorize("hasAuthority('app:create')")` 等
@@ -474,7 +491,7 @@ claims["perms"] = perms  // 权限点列表
 - `AuditLogController.page` → `audit:view`
 - `RbacController` → `user:manage` / `role:manage`
 
-> **依赖方向**：`@PreAuthorize` 是 Spring 注解，controller 在 interfaces 层可用；权限点校验依赖 JWT perms claim（token customizer 已写入）。
+> **说明**：`@PreAuthorize` 需要 `@EnableMethodSecurity`（B2 已启用 ✓）；权限点校验依赖 JWT `perms` claim（token customizer 写入）+ JwtAuthenticationConverter 映射（本步骤新增）。
 
 - [ ] **Step 5: AdminSeeder 增强（方案 C）**
 
@@ -503,6 +520,21 @@ git commit -m "feat(web): 用量/审计页 + RBAC后端(权限点/@PreAuthorize/
 - [ ] **Step 1: RBAC API + 用户身份**
 
 `api/auth.ts`：`GET /auth/validate` → `{ username, userId, tenantId, roles, perms }`（登录后调，存 userStore）。
+
+**后端配合**：`ValidateResponse` 加 `perms: List<String>` 字段（当前只有 roles），`AuthApplicationService.validate` 从 JWT claims 读 `perms`：
+```kotlin
+// ValidateResponse.kt
+data class ValidateResponse(
+    val username: String,
+    val userId: Long?,
+    val tenantId: Long?,
+    val roles: List<String>,
+    val perms: List<String>,   // 新增：权限点（方案 C）
+)
+// AuthApplicationService.validate 中
+perms = (claims["perms"] as? List<*>)?.map { it.toString() } ?: emptyList(),
+```
+
 `api/rbac.ts`：`permissions()` / `roles` CRUD / `users` / `assignRoles(userId, roleIds)`。
 
 - [ ] **Step 2: 菜单按 perms 过滤**

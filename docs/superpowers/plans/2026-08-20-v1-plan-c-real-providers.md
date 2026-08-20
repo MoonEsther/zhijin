@@ -15,9 +15,9 @@
 ## 关键决策
 
 - **供应商协议**：qwen / openai / deepseek 都走 **OpenAI 兼容协议**（`/v1/chat/completions`）；claude 走 **Anthropic Messages API**（`/v1/messages`）。Python 侧统一适配器模式。
-- **Key 下发（端口模式，解决 C1）**：
-  - 在 `zhijin-orchestrator/domain/` 定义端口：`fun interface ModelKeyResolver { fun resolvePlainKey(tenantId: Long, providerKeyId: Long): String? }`
-  - 在 `zhijin-app/config/` 提供适配 Bean：注入 `ModelConfigApplicationService.getPlainKey` 实现
+- **Key 下发（端口模式，解决 C1/N1）**：
+  - 在 `zhijin-orchestrator/domain/` 定义端口：`fun interface ModelKeyResolver { fun resolvePlainKey(providerKeyId: Long): String? }`（**去掉 tenantId，适配 Bean 内部从 TenantContextHolder 取**）
+  - 在 `zhijin-app/config/` 提供适配 Bean：注入 `ModelConfigApplicationService.getPlainKey(TenantContextHolder.getRequiredTenantId(), keyId)` 实现
   - `HttpModelComponent` 构造注入 `ModelKeyResolver`，调用时解密 Key 后传 `api_key` 明文给 Python（不落盘 Python 侧，决策 21）
 - **Token 回填（方案 A，解决 C2，保持引擎语义）**：
   - `ModelComponent.complete` 返回类型改为 `ChatCompletionResult(content: String, usage: Usage?)`
@@ -104,7 +104,7 @@ class ProviderAdapter(Protocol):
         ...
 ```
 
-- [ ] **Step 2: OpenAI 兼容适配器（qwen/openai/deepseek 共用）**
+- [ ] **Step 2: OpenAI 兼容适配器（qwen/openai/deepseek 共用，解决 C5/N5）**
 
 `adapters/openai_adapter.py`：
 ```python
@@ -117,11 +117,17 @@ from .base import CompletionResult
 class OpenAICompatibleAdapter:
     """OpenAI 兼容协议适配器。"""
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, env_var_name: str):
         self.base_url = base_url
+        self.env_var_name = env_var_name  # 解决 C5/N5：环境变量名
 
     async def complete(self, api_key: str, model: str, messages: list[dict]) -> CompletionResult:
-        client = AsyncOpenAI(api_key=api_key, base_url=self.base_url)
+        # 解决 C5/N5：api_key 为空时回退环境变量
+        key = api_key or os.getenv(self.env_var_name, "")
+        if not key:
+            raise ValueError(f"未提供 API Key 且环境变量 {self.env_var_name} 未设置")
+        
+        client = AsyncOpenAI(api_key=key, base_url=self.base_url)
         resp = await client.chat.completions.create(model=model, messages=messages)
         usage = resp.usage
         return CompletionResult(
@@ -132,13 +138,22 @@ class OpenAICompatibleAdapter:
         )
 
 
-# 预配置实例（base_url 从环境变量读）
-QWEN_ADAPTER = OpenAICompatibleAdapter(os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"))
-OPENAI_ADAPTER = OpenAICompatibleAdapter(os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
-DEEPSEEK_ADAPTER = OpenAICompatibleAdapter(os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"))
+# 预配置实例（base_url 从环境变量读，env_var_name 指定回退环境变量）
+QWEN_ADAPTER = OpenAICompatibleAdapter(
+    os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    "QWEN_API_KEY"
+)
+OPENAI_ADAPTER = OpenAICompatibleAdapter(
+    os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+    "OPENAI_API_KEY"
+)
+DEEPSEEK_ADAPTER = OpenAICompatibleAdapter(
+    os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+    "DEEPSEEK_API_KEY"
+)
 ```
 
-- [ ] **Step 3: Claude 适配器**
+- [ ] **Step 3: Claude 适配器（解决 C5/N5）**
 
 `adapters/claude_adapter.py`：
 ```python
@@ -152,7 +167,12 @@ class ClaudeAdapter:
     """Claude Messages API 适配器。"""
 
     async def complete(self, api_key: str, model: str, messages: list[dict]) -> CompletionResult:
-        client = anthropic.AsyncAnthropic(api_key=api_key)
+        # 解决 C5/N5：api_key 为空时回退环境变量
+        key = api_key or os.getenv("CLAUDE_API_KEY", "")
+        if not key:
+            raise ValueError("未提供 API Key 且环境变量 CLAUDE_API_KEY 未设置")
+        
+        client = anthropic.AsyncAnthropic(api_key=key)
         # OpenAI 格式转 Claude 格式
         system = ""
         claude_messages = []
@@ -300,7 +320,7 @@ git commit -m "feat(ai): 模型网关真实供应商(qwen/claude/openai/deepseek
 - Create: `zhijin-server/zhijin-app/src/main/kotlin/com/zhijin/app/config/ModelKeyResolverConfig.kt`（适配 Bean，解决 C1）
 - Modify: 相关测试（`HttpModelComponentTest`、`LlmNodeTest`）
 
-- [ ] **Step 1: 创建 ModelKeyResolver 端口接口（解决 C1）**
+- [ ] **Step 1: 创建 ModelKeyResolver 端口接口（解决 C1/N1）**
 
 `zhijin-orchestrator/domain/ModelKeyResolver.kt`：
 ```kotlin
@@ -309,13 +329,14 @@ package com.zhijin.orchestrator.domain
 /**
  * 模型 Key 解析端口（依赖倒置，解决 C1 模块依赖方向问题）。
  * 实现在 zhijin-app（有 ModelProviderKey 表访问权限），通过适配 Bean 注入。
+ * 签名不含 tenantId（解决 N1）：适配 Bean 内部从 TenantContextHolder 取。
  */
 fun interface ModelKeyResolver {
     /**
-     * 根据租户 ID 和 Key ID 返回解密后的明文 Key。
+     * 根据 Key ID 返回解密后的明文 Key。
      * 返回 null 表示 Key 不存在或已禁用。
      */
-    fun resolvePlainKey(tenantId: Long, providerKeyId: Long): String?
+    fun resolvePlainKey(providerKeyId: Long): String?
 }
 ```
 
@@ -398,7 +419,7 @@ class LlmNode(private val model: ModelComponent) : NodeExecutor {
 }
 ```
 
-- [ ] **Step 5: 改造 HttpModelComponent（解决 C1/C3）**
+- [ ] **Step 5: 改造 HttpModelComponent（解决 C1/C3/N1）**
 
 `zhijin-orchestrator/infrastructure/model/HttpModelComponent.kt`：
 ```kotlin
@@ -410,7 +431,7 @@ import com.zhijin.orchestrator.domain.ModelComponent
 import com.zhijin.orchestrator.domain.ModelKeyResolver
 
 /**
- * 真实模型组件：通过 ModelKeyResolver 解密 Key，传 api_key 明文给 Python（解决 C1/C3）。
+ * 真实模型组件：通过 ModelKeyResolver 解密 Key，传 api_key 明文给 Python（解决 C1/C3/N1）。
  * 请求体：{model, provider, api_key, messages}
  * 响应体：{choices[0].message.content, usage: {prompt_tokens, completion_tokens, total_tokens}}
  */
@@ -420,39 +441,41 @@ class HttpModelComponent(
 ) : ModelComponent {
 
     override suspend fun complete(prompt: String, modelName: String, providerKeyId: Long?): ChatCompletionResult {
-        // 解密 Key（解决 C1）
-        val plainKey = providerKeyId?.let { keyResolver.resolvePlainKey(0L, it) } ?: ""
+        // 解密 Key（解决 C1/N1：签名无 tenantId，适配 Bean 内部从 TenantContextHolder 取）
+        val plainKey = providerKeyId?.let { keyResolver.resolvePlainKey(it) } ?: ""
         // 传 api_key 明文给 Python（解决 C3：不落盘 Python 侧）
         return aiClient.completeWithUsage(prompt, modelName, "qwen", plainKey)
     }
 }
 ```
 
-- [ ] **Step 6: 创建 ModelKeyResolverConfig 适配 Bean（解决 C1）**
+- [ ] **Step 6: 创建 ModelKeyResolverConfig 适配 Bean（解决 C1/N1）**
 
 `zhijin-app/config/ModelKeyResolverConfig.kt`：
 ```kotlin
 package com.zhijin.app.config
 
 import com.zhijin.app.application.ModelConfigApplicationService
+import com.zhijin.framework.tenant.TenantContextHolder
 import com.zhijin.orchestrator.domain.ModelKeyResolver
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
 /**
- * ModelKeyResolver 适配 Bean（解决 C1：避免 orchestrator 直接依赖 app）。
- * 注入 ModelConfigApplicationService.getPlainKey 实现。
+ * ModelKeyResolver 适配 Bean（解决 C1/N1：避免 orchestrator 直接依赖 app）。
+ * 注入 ModelConfigApplicationService.getPlainKey 实现，内部从 TenantContextHolder 取 tenantId。
  */
 @Configuration
 class ModelKeyResolverConfig(private val modelConfigService: ModelConfigApplicationService) {
     @Bean
-    fun modelKeyResolver(): ModelKeyResolver = ModelKeyResolver { tenantId, keyId ->
+    fun modelKeyResolver(): ModelKeyResolver = ModelKeyResolver { keyId ->
+        val tenantId = TenantContextHolder.getRequiredTenantId()
         modelConfigService.getPlainKey(tenantId, keyId)
     }
 }
 ```
 
-- [ ] **Step 7: 更新测试**
+- [ ] **Step 7: 更新测试（解决 N6：补全受影响的测试）**
 
 `HttpModelComponentTest.kt`：
 ```kotlin
@@ -460,7 +483,7 @@ class ModelKeyResolverConfig(private val modelConfigService: ModelConfigApplicat
 fun `HttpModelComponent通过ModelKeyResolver解密Key`() = runTest {
     val aiClient = mock(AiClient::class.java)
     val keyResolver = mock(ModelKeyResolver::class.java)
-    `when`(keyResolver.resolvePlainKey(0L, 1L)).thenReturn("sk-test")
+    `when`(keyResolver.resolvePlainKey(1L)).thenReturn("sk-test")  // 解决 N1：签名无 tenantId
     `when`(aiClient.completeWithUsage("prompt", "qwen-max", "qwen", "sk-test"))
         .thenReturn(ChatCompletionResult("AI回复", Usage(10, 20, 30)))
     
@@ -487,6 +510,11 @@ fun `LlmNode把usage写入outputs`() = runTest {
 }
 ```
 
+**受影响的既有测试（解决 N6）**：
+- `ChatApplicationServiceTest`：`StubModelComponent` 返回类型从 `String` 改为 `ChatCompletionResult`，需更新断言
+- `WorkflowIntegrationTest` / `WorkflowRunnerTest`：多节点 DSL 含 LLM 节点，`StubModelComponent` 返回类型变化，需更新
+- 执行时全量 `mvn test` 兜底，确保所有测试通过
+
 - [ ] **Step 8: 构建验证**
 
 `cd C:\mypro\JavaProject\zhijin\zhijin-server && mvn -pl zhijin-app -am clean compile`
@@ -508,14 +536,16 @@ git commit -m "feat(orchestrator): ModelComponent返回ChatCompletionResult + Mo
 - Modify: `zhijin-server/zhijin-ai-client/src/main/kotlin/com/zhijin/aiclient/AiClient.kt`（新增 `completeWithUsage` 方法，解析 usage，解决 C7）
 - Modify: `zhijin-server/zhijin-chat/src/main/kotlin/com/zhijin/chat/application/ChatApplicationService.kt`（从执行结果取 usage 回填，解决 C2/C6）
 
-- [ ] **Step 1: AiClient 新增 completeWithUsage 方法（解决 C7）**
+- [ ] **Step 1: AiClient 新增 completeWithUsage 方法（解决 C7/N3/N4）**
 
 `zhijin-ai-client/src/main/kotlin/com/zhijin/aiclient/AiClient.kt`：
 ```kotlin
 package com.zhijin.aiclient
 
-import com.fasterxml.jackson.annotation.JsonProperty
-import org.springframework.http.MediaType
+import tools.jackson.annotation.JsonProperty  // 解决 N3：Jackson 3 注解包（非 com.fasterxml.jackson）
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.module.kotlin.KotlinModule
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter  // 解决 N4'：装配 jsonMapper 用
 import org.springframework.web.client.RestClient
 
 /** Token 使用量（snake_case → camelCase 映射，解决 C7）。 */
@@ -541,15 +571,33 @@ data class CompletionResponse(
 data class Choice(val index: Int? = null, val message: Message? = null)
 data class Message(val role: String? = null, val content: String? = null)
 
-class AiClient(private val baseUrl: String = System.getenv("AI_SERVICE_URL") ?: "http://127.0.0.1:8001") {
+/**
+ * AI 服务客户端（解决 N4/N4'：保留 KotlinModule JsonMapper 配置并装配进 RestClient）。
+ * 必须配置 JsonMapper.builder().addModule(KotlinModule.Builder().build()) 并通过
+ * configureMessageConverters 装配，否则默认 JsonMapper 无法构造 Kotlin data class
+ * （无默认构造器），反序列化会抛异常（B5 执行时踩过的坑）。
+ */
+open class AiClient(private val baseUrl: String = System.getenv("AI_SERVICE_URL") ?: "http://127.0.0.1:8001") {
 
-    private val restClient = RestClient.builder().baseUrl(baseUrl).build()
+    // 解决 N4：KotlinModule 配置（B5 执行时踩过的坑）
+    private val jsonMapper = JsonMapper.builder()
+        .addModule(KotlinModule.Builder().build())
+        .build()
+
+    // 解决 N4'：把 jsonMapper 装配进 RestClient 消息转换器（必须先 registerDefaults 再 withJsonConverter）
+    private val restClient = RestClient.builder()
+        .baseUrl(baseUrl)
+        .configureMessageConverters { converters ->
+            converters.registerDefaults()
+            converters.withJsonConverter(JacksonJsonHttpMessageConverter(jsonMapper))
+        }
+        .build()
 
     /** 调用模型，返回 assistant 内容（向后兼容）。 */
     fun complete(prompt: String, model: String = "default"): String =
         completeWithUsage(prompt, model, "qwen", "").content
 
-    /** 调用模型，返回内容 + usage（解决 C7：snake_case 映射）。 */
+    /** 调用模型，返回内容 + usage（解决 C7/N3/N4：snake_case 映射 + KotlinModule 配置）。 */
     fun completeWithUsage(
         prompt: String,
         model: String = "default",
@@ -574,7 +622,9 @@ class AiClient(private val baseUrl: String = System.getenv("AI_SERVICE_URL") ?: 
 }
 ```
 
-- [ ] **Step 2: ChatApplicationService 从执行结果取 usage 回填（解决 C2/C6）**
+> **N4 关键**：必须配置 `JsonMapper.builder().addModule(KotlinModule.Builder().build())`，否则 Kotlin data class 反序列化失败。现有 `AiClient` 已有此配置（B5 执行时踩过坑），重写版必须保留。
+
+- [ ] **Step 2: ChatApplicationService 从执行结果取 usage 回填（解决 C2/N2'/N6）**
 
 `zhijin-chat/.../application/ChatApplicationService.kt`：
 ```kotlin
@@ -584,13 +634,16 @@ val provider = "qwen"
 val model = "qwen-max"
 val providerKeyId: Long? = null  // 后续从 AppModelConfig 取
 
-// 执行工作流（LlmNode 内部调用 ModelComponent，usage 透传到 NodeResult）
+// 执行工作流（LlmNode 内部调用 ModelComponent，usage 透传到 NodeResult，再写入 VariableStore）
+// 解决 N2'：VariableStore 作为局部变量，执行后从 store 取 usage
+val store = VariableStore()
 val result = runBlocking {
-    runner.execute(DefaultWorkflow.build(req.message), VariableStore())
+    runner.execute(DefaultWorkflow.build(req.message), store)
 }
 
-// 从执行结果取 usage（解决 C2）
-val usage = result.outputs["usage"] as? com.zhijin.orchestrator.domain.Usage
+// 从 VariableStore 取 usage（解决 N2'：WorkflowResult 无 outputs 字段，但 LlmNode 写入的 usage 在 store 里）
+// VariableStore 需有 readNodeOutput 方法（或 readNodeOutput 已存在）
+val usage = store.readNodeOutput("llm", "usage") as? com.zhijin.orchestrator.domain.Usage
 usageRecorder.record(
     UsageRecord(
         tenantId = tenantId, appId = appId, sessionId = session.id,
@@ -611,6 +664,11 @@ NodeSchema(
     outputs = listOf(OutputField("output", "string")),
     configs = mapOf("model" to "qwen-max", "provider" to "qwen", "providerKeyId" to null),
 )
+```
+
+> **VariableStore 读方法**：检查 `VariableStore` 是否有 `readNodeOutput(nodeId, outputKey)` 方法。若只有 `writeNodeOutput`，需新增：
+```kotlin
+fun readNodeOutput(nodeId: String, outputKey: String): Any? = outputs["$nodeId.$outputKey"]
 ```
 
 - [ ] **Step 3: 测试 + 验证**

@@ -6,7 +6,7 @@
 
 **Architecture:** 每模块按依赖规则分层：`interfaces`（HTTP 边界，薄控制器 + DTO）→ `application`（应用服务/用例编排 + 事务）→ `domain`（富血实体/值对象/聚合/仓储接口/领域服务，**零 Spring/MyBatis 依赖**，纯 Kotlin）→ `infrastructure`（MyBatis-Plus 实现仓储、外部客户端适配器、配置）。依赖箭头严格向内；仓储接口在 domain，实现放 infrastructure（依赖倒置，DIP）。
 
-> **版本说明（2026-08-20 v3）**：v2 按审核反馈修订（包名 `interfaces`、命名保留 App、publish 保留快照、ApiKey 拦截器绕过、HttpModelComponent 归属等）；v3 按 v2 复审反馈再修订（K1 `AppRecord.id` 改 var 保证自增回填、K2 Mapper 保留原包不移动、K4 补 publishBy、K5 状态显式映射、K6 dto 整体移动、K8 CryptoService 接口归 domain、K9 并发注记、K10 测试数修正、K3 去行内署名）。
+> **版本说明（2026-08-20 v3.1）**：v2 修订（interfaces/保留 App/publish 快照/ApiKey 绕过等）；v3 修订（K1-K10：var id、Mapper 保留、publishBy、显式 when、dto 移动、CryptoService 归属、并发注记、测试数、去署名）；v3.1 按 v3 复审修订（K2' AppRepositoryImpl import 改 `com.zhijin.app.mapper.AppMapper`；S1 ProviderKey 用 DTO、S2 复用 SysUserRepository、S3 AppVersion 枚举注记）。
 
 **Tech Stack:** Kotlin 2.2 · Spring Boot 4 · MyBatis-Plus（仅 infrastructure 层）· 既有模块
 
@@ -133,7 +133,7 @@ data class AppVersion(
     val versionNo: Int,
     val workflowDsl: String?,
     val modelSnapshot: String?,
-    val status: Int = 1,
+    val status: Int = 1,           // S3(可选)：可改用 AppStatus/专门枚举替代裸 Int，与值对象精神一致；沿用 Int 亦可（schema SMALLINT）
     val publishBy: Long?,          // 对应 app_version.publish_by 列
     val publishTime: LocalDateTime?,
 )
@@ -195,7 +195,7 @@ package com.zhijin.app.infrastructure.persistence
 
 import com.zhijin.app.domain.app.App
 import com.zhijin.app.domain.app.AppRepository
-import com.zhijin.app.infrastructure.mapper.AppMapper
+import com.zhijin.app.mapper.AppMapper   // 注意：Mapper 保留在 com.zhijin.app.mapper（不移动，@MapperScan 硬编码），import 用原包
 import org.springframework.stereotype.Repository
 
 @Repository
@@ -354,6 +354,7 @@ class AppController(private val service: AppApplicationService) {
 - `domain/modelconfig/`：`ModelProviderKey`、`AppModelConfig` 富血实体 + `ModelConfigRepository` 接口 + **`CryptoService` 接口（K8：领域服务接口放 domain）**。
 - `infrastructure/crypto/CryptoServiceImpl.kt`：实现 `CryptoService`（`encrypt/decrypt`，AES-256-GCM）——加密适配器归 infra。
 - `application/ModelConfigApplicationService.kt`：addProviderKey（加密落库）、getPlainKey（解密）、saveConfig（upsert）。
+  - **S1：接口层不暴露 domain 实体**——`ProviderKeyController` 现有直接把 `ModelProviderKey` 实体当响应返回，迁移后改用 DTO（如 `ProviderKeyResponse`：id/name/provider，不含 encrypted_key）。
 
 **ApiKey 聚合**（原 AppApiKeyService）：
 - `domain/apikey/`：`AppApiKey` 富血实体 + `ApiKeyRepository` 接口。
@@ -393,6 +394,7 @@ git commit -m "refactor(ddd): zhijin-app 迁移到 DDD 四层(示范完成)"
 
 - [ ] **Task: auth 模块 DDD 分层**
   - `domain`：`User`（富血：`verifyPassword`/`isDisabled` 行为）、`UserRepository`（`findByUsername`）、`UserId`/`TenantId` 值对象。
+    - **S2：复用现有仓储雏形**——`auth/repository/SysUserMapper.kt` 已有 `SysUserRepository` 接口（`SysUserMapper : BaseMapper<SysUser>, SysUserRepository`），迁移时**重命名/复用为 domain 接口**（移到 `domain` 包），避免两套仓储接口并存。
   - `application`：`AuthApplicationService`（validate 用例——从 JWT 读身份组装响应；logout 无状态）。
   - `infrastructure`：`UserRepositoryImpl`（SysUserMapper 实现，保留 `@InterceptorIgnore` 登录绕过）、`UserDetailsAdapter`（domain User ↔ Spring Security `ZhijinUserDetails`）、`SecurityConfig`/`OAuth2TokenCustomizer`（框架配置归 infra）。
   - `interfaces`：`AuthController`（validate/logout，薄）。

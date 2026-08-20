@@ -522,3 +522,24 @@ git commit -m "docs(plans): B2重构 追加执行修正记录"
 | 前后端分离 console | Plan D 时采纳 spring-session-data-redis 共享 session + JSON 登录/确认处理器 |
 | token 端点参数 | SAS 1.2.1+ 只能用 **form-data**（url-params 失败）；联调注意 |
 | InMemory 存储 | 禁止生产，用 JDBC（B2 已用）✓ |
+
+---
+
+## 执行修正记录（2026-08-20 实现期间的真实发现，均已落地并验证）
+
+| # | 修正 | 原因 |
+|---|---|---|
+| 1 | `OAuth2AuthorizationServerConfiguration` 包路径：`org.springframework.security.config.annotation.web.configuration` | Security 7 并入 spring-security-config，包迁移 |
+| 2 | `jwkSource()` 无法在 SecurityConfig 内调用（Bean 在 JwtConfig）→ 方法参数注入 | Bean 方法跨类不可直接调 |
+| 3 | `{noop}` 明文 client secret 与 `BCryptPasswordEncoder` 冲突 → 用 `passwordEncoder.encode(...)` 存储 | AS 的 ClientSecretAuthenticationProvider 用唯一 PasswordEncoder Bean 校验，BCrypt 无法验证 `{noop}` |
+| 4 | `UserDetailsServiceImpl` 加 `@Service` | 表单登录链 DaoAuthenticationProvider 自动拾取 |
+| 5 | `ClientRepositoryConfig` 重写为 InMemory（console + server），旧 JDBC repo 移除 | 避免 duplicate `registeredClientRepository` Bean；JDBC 表留作后续 |
+| 6 | `JwtTenantFilter` 保留在链 2 | 多租户隔离不能丢 |
+| 7 | `ZhijinUserDetails` `val username/password` 与 override 冲突 → `@get:JvmName` | Kotlin 平台声明冲突 |
+| 8 | tokenCustomizer 对 access + ID token 都生效（UsernamePasswordAuthenticationToken 守卫保证 client_credentials 干净） | JwtGenerator 统一处理 |
+| 9 | AuthControllerTest issuer = `http://localhost:8080` | 对齐 AUTH_ISSUER 默认值 |
+| 10 | MockMvc 测 authorize 需显式 query-string（`.param()` 被丢弃） | `OAuth2EndpointUtils.getQueryParameters` 读原始 query string |
+| 11 | `spring-security-test` test 依赖加入 app pom | `.with(csrf())` / `.with(httpBasic())` |
+| 12 | console client 为机密客户端 + PKCE（`CLIENT_SECRET_BASIC`） | 计划如此；SPA 更常见公共客户端 + `NONE`，Plan D 前端时再定 |
+
+> **端到端验收**：真实环境 `POST /oauth2/token`（client_credentials）签发 JWT（`iss=http://localhost:8080`）✅、OIDC Discovery 正常 ✅；完整授权码流（表单登录 → PKCE → code → token，`sub=admin`）由集成测试 `OAuth2LoginFlowTest` 验证（3 场景全绿）。自定义 `/auth/login` 已彻底移除，认证完全走 Spring Security。

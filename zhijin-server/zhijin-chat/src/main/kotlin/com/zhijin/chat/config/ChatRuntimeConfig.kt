@@ -1,8 +1,8 @@
 package com.zhijin.chat.config
 
 import com.zhijin.aiclient.AiClient
-import com.zhijin.orchestrator.model.ModelComponent
-import com.zhijin.orchestrator.nodes.HttpModelComponent
+import com.zhijin.orchestrator.domain.ModelComponent
+import com.zhijin.orchestrator.infrastructure.model.HttpModelComponent
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 

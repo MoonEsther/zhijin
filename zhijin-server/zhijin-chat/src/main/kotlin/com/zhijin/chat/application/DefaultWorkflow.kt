@@ -1,12 +1,12 @@
 package com.zhijin.chat.application
 
-import com.zhijin.orchestrator.model.Connection
-import com.zhijin.orchestrator.model.FieldInfo
-import com.zhijin.orchestrator.model.FieldSource
-import com.zhijin.orchestrator.model.NodeSchema
-import com.zhijin.orchestrator.model.NodeType
-import com.zhijin.orchestrator.model.OutputField
-import com.zhijin.orchestrator.model.WorkflowSchema
+import com.zhijin.orchestrator.domain.Connection
+import com.zhijin.orchestrator.domain.FieldInfo
+import com.zhijin.orchestrator.domain.FieldSource
+import com.zhijin.orchestrator.domain.NodeSchema
+import com.zhijin.orchestrator.domain.NodeType
+import com.zhijin.orchestrator.domain.OutputField
+import com.zhijin.orchestrator.domain.WorkflowSchema
 
 /**
  * 默认 LLM-only 工作流：start → llm(prompt=用户消息) → end。

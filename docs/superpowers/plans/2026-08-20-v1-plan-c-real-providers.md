@@ -736,3 +736,19 @@ git commit -m "docs(plans): 计划 C 追加执行修正记录"
 ## 执行交接
 
 计划 C 完成后 → **Plan D**（前端控制台）。
+
+---
+
+## 执行修正记录（2026-08-20 实现期间的真实发现，均已落地并验证）
+
+| # | 修正/发现 | 说明 |
+|---|---|---|
+| 1 | **claude 适配器 ThinkingBlock**：`resp.content[0]` 可能是 ThinkingBlock（无 `.text`，本机代理/thinking 场景必炸） | 改为取首个 `type=="text"` 块；真实 Anthropic API 兼容 |
+| 2 | **评审 N3 有误**：Jackson 3.0.2 的注解仍留在 `com.fasterxml.jackson.core:jackson-annotations:2.20`（官方设计 "Annotations remain at Jackson 2.x group id"），`tools.jackson.annotation.JsonProperty` 不存在 | 改用 `com.fasterxml.jackson.annotation.JsonProperty`（已从 pom 验证） |
+| 3 | **WorkflowRunner 必须改**：原 runner 只把 `schema.outputs` 声明的键写入 VariableStore，LlmNode 写入的 `outputs["usage"]` 会被丢弃 → `readNodeOutput("llm","usage")` 恒为 null | 改为写全部 `result.outputs`（对既有声明输出行为等价，19 测试通过） |
+| 4 | **ChatRuntimeConfig 必须改**：HttpModelComponent 新增 keyResolver 参数，运行时装配点（zhijin-chat）需注入 ModelKeyResolver Bean | 构造注入，zhijin-app 提供 Bean |
+| 5 | **provider 写死 qwen 导致真实链路不通**：联调时 Python 端回退 QWEN_API_KEY 未设置 → 502 | 落地 C6：`ModelComponent.complete` 加 provider 参数，`LlmNode` 读 `configs["provider"]`，`ChatApplicationService` 从 `MODEL_PROVIDER`/`MODEL_NAME` 环境变量取（默认 qwen/qwen-max） |
+| 6 | **本机 deepseek 环境变量名不匹配**：本机是 `DS_API_KEY`/`DS_BASE_URL`，代码按计划读 `DEEPSEEK_API_KEY`/`DEEPSEEK_BASE_URL` | V1 可接受（Kotlin 下发 api_key 可绕过），已注明 |
+| 7 | **Windows 端口占用**：旧 uvicorn/java 进程残留导致 jar 重打包失败、8001 端口被旧进程占用（未注入 CLAUDE_API_KEY → 502） | 联调前需清理 python/java 进程；`powershell Get-Process \| Where-Object ProcessName -match 'python\|java' \| Stop-Process -Force` |
+
+> **端到端验收结论（真 PG + 真 Nacos + claude 真实供应商走本机代理）**：OAuth2 授权码流 → 创建应用 → API Key → `/v1/chat` → 工作流 LlmNode → HttpModelComponent（ModelKeyResolver 端口）→ Python claude 适配器 → **真实供应商回复** → usage 回填 `usage_record`（app 9：totalCalls=1, **totalTokens=181 非 0**）✅。计划 C 完成，67 测试全绿。

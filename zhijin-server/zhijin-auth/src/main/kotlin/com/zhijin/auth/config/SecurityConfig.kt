@@ -54,17 +54,19 @@ class SecurityConfig {
         return http.build()
     }
 
-    // ---------- 链 2：业务接口（资源服务器，Bearer JWT） ----------
+    // ---------- 链 2：业务接口（资源服务器，Bearer JWT；/v1/** 开放 API 用 API Key，放行） ----------
     @Bean
     @Order(2)
     fun defaultSecurityFilterChain(http: HttpSecurity): SecurityFilterChain =
         http
-            .securityMatcher("/api/**", "/auth/**")
+            .securityMatcher("/api/**", "/auth/**", "/v1/**")
             // 无状态 JWT API：禁用 CSRF（POST 登录等不需要表单 CSRF token）
             .csrf { it.disable() }
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers("/auth/login").permitAll()
+                    // 开放 API 走 X-API-Key 鉴权（ApiKeyAuthFilter），不由 JWT 管理端链路拦截
+                    .requestMatchers("/v1/**").permitAll()
                     .anyRequest().authenticated()
             }
             .oauth2ResourceServer { it.jwt(Customizer.withDefaults()) }

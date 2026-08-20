@@ -44,6 +44,16 @@ class AppApiKeyService(private val keyMapper: AppApiKeyMapper) {
         return key != null && key.status == 1
     }
 
+    /**
+     * 通过明文 Key 反查租户+应用（V1 开放 API /v1 鉴权用）。返回 null 表示无效。
+     * 查询必须绕过租户拦截器：调用时机在租户上下文建立之前，租户本身由 Key 解析而来。
+     */
+    fun findByPlainKey(plainKey: String): Pair<Long, Long>? {
+        val key = keyMapper.findByHash(sha256(plainKey)) ?: return null
+        if (key.status != 1) return null
+        return Pair(key.tenantId!!, key.appId!!)
+    }
+
     /** 将明文做 SHA-256 摘要并输出 64 位小写十六进制串。 */
     private fun sha256(s: String): String =
         MessageDigest.getInstance("SHA-256").digest(s.toByteArray())

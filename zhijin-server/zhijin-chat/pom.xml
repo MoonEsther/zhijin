@@ -20,6 +20,11 @@
       <groupId>com.zhijin</groupId>
       <artifactId>zhijin-framework</artifactId>
     </dependency>
+    <!-- 编排引擎：默认工作流 / ModelComponent 抽象 / WorkflowRunner -->
+    <dependency>
+      <groupId>com.zhijin</groupId>
+      <artifactId>zhijin-orchestrator</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

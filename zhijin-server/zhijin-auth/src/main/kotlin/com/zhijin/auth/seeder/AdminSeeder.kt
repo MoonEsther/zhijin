@@ -2,7 +2,7 @@ package com.zhijin.auth.seeder
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper
 import com.zhijin.auth.entity.SysTenant
-import com.zhijin.auth.entity.SysUser
+import com.zhijin.auth.infrastructure.persistence.SysUserRecord
 import com.zhijin.auth.repository.SysTenantMapper
 import com.zhijin.auth.repository.SysUserMapper
 import org.slf4j.LoggerFactory
@@ -39,7 +39,7 @@ class AdminSeeder(
         val admin = userMapper.findByTenantIdAndUsername(tenantId, "admin")
         if (admin == null) {
             val initPwd = System.getenv("ADMIN_INIT_PASSWORD") ?: "admin123"
-            val u = SysUser(
+            val u = SysUserRecord(
                 tenantId = tenantId, username = "admin",
                 password = passwordEncoder.encode(initPwd)!!, nickname = "管理员", status = 1,
             )

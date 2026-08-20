@@ -3,7 +3,7 @@ package com.zhijin.app.auth
 import com.jayway.jsonpath.JsonPath
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet
 import com.nimbusds.jose.proc.SecurityContext
-import com.zhijin.auth.entity.SysUser
+import com.zhijin.auth.infrastructure.persistence.SysUserRecord
 import com.zhijin.auth.repository.SysUserMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -64,7 +64,7 @@ class OAuth2LoginFlowTest {
         // 幂等：AdminSeeder 启动时已创建 tenant 1 的 admin；此处兜底，避免依赖启动顺序
         if (userMapper.findByTenantIdAndUsername(1L, "admin") == null) {
             userMapper.insert(
-                SysUser(
+                SysUserRecord(
                     tenantId = 1L,
                     username = "admin",
                     password = passwordEncoder.encode("admin123")!!,

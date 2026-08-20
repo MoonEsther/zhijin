@@ -17,7 +17,7 @@ data class Usage(
 interface ModelComponent {
     /**
      * 调用模型，返回 assistant 内容 + token 使用量。
-     * providerKeyId 为加密 Key 的 ID，通过 ModelKeyResolver 解密。
+     * providerKeyId 为加密 Key 的 ID，通过 ModelKeyResolver 解密；provider 为供应商名。
      */
-    suspend fun complete(prompt: String, modelName: String, providerKeyId: Long? = null): ChatCompletionResult
+    suspend fun complete(prompt: String, modelName: String, provider: String = "qwen", providerKeyId: Long? = null): ChatCompletionResult
 }

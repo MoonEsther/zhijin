@@ -20,11 +20,11 @@ class HttpModelComponent(
     private val keyResolver: ModelKeyResolver,  // 解决 C1：端口模式
 ) : ModelComponent {
 
-    override suspend fun complete(prompt: String, modelName: String, providerKeyId: Long?): ChatCompletionResult {
+    override suspend fun complete(prompt: String, modelName: String, provider: String, providerKeyId: Long?): ChatCompletionResult {
         // 解密 Key（解决 C1/N1：签名无 tenantId，适配 Bean 内部从 TenantContextHolder 取）
         val plainKey = providerKeyId?.let { keyResolver.resolvePlainKey(it) } ?: ""
         // 传 api_key 明文给 Python（解决 C3：不落盘 Python 侧）
-        val aiResult = aiClient.completeWithUsage(prompt, modelName, "qwen", plainKey)
+        val aiResult = aiClient.completeWithUsage(prompt, modelName, provider, plainKey)
         // ai-client 结果 → 领域类型（usage 可能为 null，保持透传）
         return ChatCompletionResult(
             content = aiResult.content,

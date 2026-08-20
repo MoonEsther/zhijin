@@ -11,8 +11,9 @@ class LlmNode(private val model: ModelComponent) : NodeExecutor {
     override suspend fun invoke(ctx: NodeContext, node: NodeSchema): NodeResult {
         val prompt = node.inputs.firstOrNull { it.key == "prompt" }?.let { ctx.variableStore.resolveRef(it.source) }?.toString() ?: ""
         val modelName = node.configs["model"]?.toString() ?: "default"
+        val provider = node.configs["provider"]?.toString() ?: "qwen"
         val providerKeyId = (node.configs["providerKeyId"] as? Number)?.toLong()
-        val result = model.complete(prompt, modelName, providerKeyId)
+        val result = model.complete(prompt, modelName, provider, providerKeyId)
         val outKey = node.outputs.firstOrNull()?.key ?: "output"
         return NodeResult(
             outputs = mapOf(

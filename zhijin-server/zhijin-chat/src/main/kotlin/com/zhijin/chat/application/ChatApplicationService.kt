@@ -70,9 +70,9 @@ class ChatApplicationService(
                 sessionRepository.appendMessage(session.appendMessage("user", req.message))
                 log.info("对话会话创建: tenantId={}, appId={}, sessionId={}", tenantId, appId, session.id)
 
-                // 模型配置（解决 C6）：V1 简化写死 qwen/qwen-max；providerKeyId 后续从 AppModelConfig 取
-                val provider = "qwen"
-                val model = "qwen-max"
+                // 模型配置（解决 C6）：V1 从环境变量取（默认 qwen/qwen-max），providerKeyId 后续从 AppModelConfig 取
+                val provider = System.getenv("MODEL_PROVIDER") ?: "qwen"
+                val model = System.getenv("MODEL_NAME") ?: "qwen-max"
                 val providerKeyId: Long? = null  // 后续从 AppModelConfig 取
 
                 // 执行工作流：VariableStore 作为局部变量传入（解决 N2'），

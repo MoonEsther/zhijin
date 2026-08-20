@@ -22,7 +22,7 @@ class HttpModelComponentTest {
             .thenReturn(AiChatCompletionResult("AI回复", AiUsage(10, 20, 30)))  // 解决 C3：api_key 明文随请求下发
 
         val component = HttpModelComponent(aiClient, keyResolver)
-        val result = component.complete("prompt", "qwen-max", 1L)
+        val result = component.complete("prompt", "qwen-max", "qwen", 1L)
 
         // 断言领域层结果：内容 + usage（token 计数透传，解决 C2）
         assertEquals("AI回复", result.content)
@@ -39,7 +39,7 @@ class HttpModelComponentTest {
             .thenReturn(AiChatCompletionResult("AI回复", null))
 
         val component = HttpModelComponent(aiClient, keyResolver)
-        val result = component.complete("prompt", "qwen-max", null)
+        val result = component.complete("prompt", "qwen-max", "qwen", null)
 
         // providerKeyId 为空 → 不触发 Key 解析，回退空 Key（Python 侧回退环境变量，解决 C5）
         assertEquals("AI回复", result.content)

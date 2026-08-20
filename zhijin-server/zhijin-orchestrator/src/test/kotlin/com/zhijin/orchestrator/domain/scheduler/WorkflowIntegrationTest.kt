@@ -1,6 +1,7 @@
 package com.zhijin.orchestrator.domain.scheduler
 
 import com.zhijin.orchestrator.domain.VariableStore
+import com.zhijin.orchestrator.domain.Usage
 import com.zhijin.orchestrator.infrastructure.WorkflowParser
 import com.zhijin.orchestrator.domain.executor.NodeExecutorRegistry
 import com.zhijin.orchestrator.domain.NodeType
@@ -12,6 +13,7 @@ import com.zhijin.orchestrator.domain.nodes.StubModelComponent
 import com.zhijin.orchestrator.domain.nodes.VariableNode
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 
 /**
@@ -53,7 +55,13 @@ class WorkflowIntegrationTest {
           ] }
         """.trimIndent()
         val schema = WorkflowParser().parse(json)
-        val result = WorkflowRunner(registry).execute(schema, VariableStore())
+        val store = VariableStore()
+        val result = WorkflowRunner(registry).execute(schema, store)
         assertEquals("AI回复", result.finalOutput)
+
+        // 解决 C2：usage 经 LlmNode → WorkflowRunner 落入变量区，供上层（ChatApplicationService）回填 usage_record
+        val usage = store.readNodeOutput("llm", "usage") as? Usage
+        assertNotNull(usage)
+        assertEquals(30, usage?.totalTokens)
     }
 }

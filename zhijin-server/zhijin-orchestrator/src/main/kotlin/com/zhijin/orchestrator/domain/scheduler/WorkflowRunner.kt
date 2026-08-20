@@ -27,9 +27,10 @@ class WorkflowRunner(private val registry: NodeExecutorRegistry) {
             val executor = registry.get(node.type)
             val ctx = NodeContext(store)
             val result = executor.invoke(ctx, node)
-            // 写节点输出到变量区
-            node.outputs.forEach { out ->
-                store.writeNodeOutput(node.key, out.key, result.outputs[out.key])
+            // 写节点输出到变量区（含未在 schema.outputs 声明的透传键，
+            // 如 LLM 节点的 usage，解决 C2：usage 需落入 store 供上层回填 usage_record）
+            result.outputs.forEach { (outputKey, value) ->
+                store.writeNodeOutput(node.key, outputKey, value)
             }
             // END 节点聚合最终输出（约定 END 输出 finalOutput）
             if (node.type == NodeType.END) {

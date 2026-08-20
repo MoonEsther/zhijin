@@ -503,3 +503,22 @@ git commit -m "docs(plans): B2重构 追加执行修正记录"
 ## 执行交接
 
 重构完成后 → **计划 C**（AI 服务真实供应商）或 **B6**（用量统计 + 审计），可继续 V1 剩余交付。
+
+---
+
+## 博客研读补充（2026-08-20，已通读掘金 SAS 系列全部 27 篇）
+
+来源：掘金专栏 `7239953874950684732`（SAS 1.x / Boot 3 时代，API 以 Security 7 / Boot 4 实际编译为准）。对 B2 重构的采纳与注意点：
+
+| 主题 | 采纳/注意 |
+|---|---|
+| `applyDefaultSecurity(http)` | **已过时**，用组件式 `OAuth2AuthorizationServerConfigurer`（B2 已如此）✓ |
+| `OAuth2TokenCustomizer` 写自定义 claim | 采纳（tenant_id/roles）✓；按 `context.getPrincipal().getPrincipal() is UserDetails` 判断 |
+| `JwtGrantedAuthoritiesConverter` 默认加 `SCOPE_` 前缀 | 注意：RBAC 鉴权 `hasAuthority('SCOPE_xxx')`；自定义前缀/claim 名时对应调整 |
+| issuer 一致性 | token `iss` 必须与 `AUTH_ISSUER` 一致，否则资源服务器 401；联调确认 |
+| 统一异常响应 | 采纳：`AuthenticationEntryPoint`/`AccessDeniedHandler` 返回 JSON（401 invalid_token / 403 insufficient_scope） |
+| 登出三层 | `/logout`（session）+ `/connect/logout`（OIDC，`post_logout_redirect_uri` 需预注册）+ `/oauth2/revoke`（撤销 token）；V1 保留 `/auth/logout` 简化 |
+| JWKSource 持久化 | V1 启动生成（重启失效可接受）；生产化用 Redis 存 JWKSet（`JWKSet.parse/toString`） |
+| 前后端分离 console | Plan D 时采纳 spring-session-data-redis 共享 session + JSON 登录/确认处理器 |
+| token 端点参数 | SAS 1.2.1+ 只能用 **form-data**（url-params 失败）；联调注意 |
+| InMemory 存储 | 禁止生产，用 JDBC（B2 已用）✓ |

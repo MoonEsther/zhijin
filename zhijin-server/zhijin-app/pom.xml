@@ -48,6 +48,12 @@
       <artifactId>h2</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- 测试：MockMvc 的 csrf()/httpBasic() 等安全相关 RequestPostProcessor -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

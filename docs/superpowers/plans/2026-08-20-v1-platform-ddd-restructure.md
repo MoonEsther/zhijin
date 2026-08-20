@@ -457,3 +457,23 @@ git commit -m "refactor(ddd): zhijin-app 迁移到 DDD 四层(示范完成)"
 ## 执行交接
 
 DDD 改造完成后 → **B6 用量统计 + 审计**（按 DDD 分层直接新建）→ **计划 C**（Python 真实供应商）→ **Plan D**（前端控制台）。
+
+---
+
+## 执行修正记录（2026-08-20 实现期间的真实发现，均已落地并验证）
+
+| # | 模块 | 修正/发现 | 说明 |
+|---|---|---|---|
+| 1 | P2A | 选 Option B：旧 `entity/App.kt` 立即改名 `AppRecord`（非别名并存） | AppMapper 泛型改 `BaseMapper<AppRecord>` 会破坏旧 service，同步把 AppService/PublishService 改用 record，保持构建绿（Task B 再删） |
+| 2 | P2B | **Mockito × Kotlin 非空参数坑**：`any()` 运行时返回 null 触发 Kotlin `checkNotNullExpressionValue`，mock 未调用 + 匹配器残留 | 用「先 `any()` 注册语义再返回非空占位实例」的辅助方法（anyApp/anyVersion/anyApiKey）绕过；后续 Kotlin 接口 mock 沿用此模式 |
+| 3 | P2B | `ProviderKeyController` 响应从 `Long` 变 `ProviderKeyResponse` | S1 要求不暴露领域实体，属预期 API 契约变更 |
+| 4 | P3 | **包迁移后必须 `clean` 构建**：旧 .class 残留导致 Bean 名冲突 | P4/P5 均遇到；后续包迁移一律 clean |
+| 5 | P3 | `SysUserRepository` 复用（S2）：重命名迁移为 `domain.user.UserRepository`（findByUsername 返回领域 User） | `SysUserMapper` 改为只处理 SysUserRecord，不再实现该接口 |
+| 6 | P3 | `UserDetailsServiceImpl` 迁 `infrastructure/security`，依赖领域 UserRepository + UserDetailsAdapter 转换 | 密码校验留 Spring DaoAuthenticationProvider（领域再加是死代码） |
+| 7 | P4 | `DefaultWorkflow` 归 `application/`（编排用例助手） | 构建 WorkflowSchema 属 chat 用例，非持久化/框架 |
+| 8 | P4 | `SessionRepository.appendMessage(msg)` 无 tenantId 参数，靠租户拦截器从 TenantContextHolder 填充 | `chatAsync` 子线程重设租户上下文；`/v1/chat` 回归确认未破坏隔离 |
+| 9 | P5 | `tool/` 未在 P5 计划内 → 归 `domain.tool`（Tool/ToolRegistry/EchoTool） | ToolNode 引用 ToolRegistry，随领域逻辑移动 |
+| 10 | P5 | `StubModelComponent` 留在 `domain.nodes`（main，非 test） | zhijin-chat 测试跨模块引用，test-scope 不传递；未来 test-fixtures 模块更干净 |
+| 11 | P5 | `NodeExecConfig.fromJson` 用 Jackson 3（infra 类型）在 domain | 不违反零 Spring/MyBatis 规则；严格 DDD 纯度可后续把该 helper 移入 parser |
+
+> **端到端回归结论（真 PG + 真 Nacos + Python 桩）**：OAuth2 授权码流（表单登录 → PKCE → code → 用户 token）✅ → 创建应用 ✅ → **发布两次 versionNo 1→2**（版本快照保留）✅ → API Key 生成 ✅ → `/v1/chat` SSE 返回 ✅（租户绕过未回归）。**DDD 改造零行为回归，56 测试全绿。**

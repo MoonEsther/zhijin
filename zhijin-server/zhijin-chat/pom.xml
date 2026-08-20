@@ -25,6 +25,11 @@
       <groupId>com.zhijin</groupId>
       <artifactId>zhijin-orchestrator</artifactId>
     </dependency>
+    <!-- 用量域：chat 流程依赖倒置注入 UsageRecorder 端口（P2a） -->
+    <dependency>
+      <groupId>com.zhijin</groupId>
+      <artifactId>zhijin-billing-audit</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

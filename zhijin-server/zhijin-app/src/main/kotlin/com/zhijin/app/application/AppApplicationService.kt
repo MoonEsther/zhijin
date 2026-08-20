@@ -5,6 +5,8 @@ import com.zhijin.app.domain.app.AppRepository
 import com.zhijin.app.domain.app.AppStatus
 import com.zhijin.app.domain.app.AppVersion
 import com.zhijin.app.domain.app.AppVersionRepository
+import com.zhijin.billingaudit.domain.audit.AuditLog
+import com.zhijin.billingaudit.domain.audit.AuditRecorder
 import com.zhijin.common.exception.BizException
 import com.zhijin.common.web.ResultCode
 import org.springframework.stereotype.Service
@@ -17,6 +19,8 @@ import java.util.UUID
 class AppApplicationService(
     private val appRepository: AppRepository,
     private val versionRepository: AppVersionRepository,
+    /** 审计记录端口（依赖倒置注入，默认 no-op 保证无适配器时流程不受影响）。 */
+    private val auditRecorder: AuditRecorder = AuditRecorder {},
 ) {
 
     @Transactional
@@ -27,7 +31,12 @@ class AppApplicationService(
             name = name, description = description, iconUri = iconUri,
             status = AppStatus.DRAFT, createBy = null, createTime = null, updateTime = null,
         )
-        return appRepository.save(app)
+        val saved = appRepository.save(app)
+        // 记录审计（P8：username 暂取不到用户信息，传空串）
+        auditRecorder.record(
+            AuditLog(tenantId = tenantId, username = "", action = "APP_CREATE", targetType = "app", targetId = saved.id)
+        )
+        return saved
     }
 
     fun get(tenantId: Long, id: Long): App =
@@ -37,7 +46,12 @@ class AppApplicationService(
     fun update(tenantId: Long, id: Long, name: String, description: String, iconUri: String): App {
         val app = get(tenantId, id)
         app.ensureOwnedBy(tenantId)   // 越权 403
-        return appRepository.save(app.copy(name = name, description = description, iconUri = iconUri))
+        val saved = appRepository.save(app.copy(name = name, description = description, iconUri = iconUri))
+        // 记录审计（P8：username 暂取不到用户信息，传空串）
+        auditRecorder.record(
+            AuditLog(tenantId = tenantId, username = "", action = "APP_UPDATE", targetType = "app", targetId = saved.id)
+        )
+        return saved
     }
 
     @Transactional
@@ -45,6 +59,10 @@ class AppApplicationService(
         val app = get(tenantId, id)
         app.ensureOwnedBy(tenantId)
         appRepository.delete(tenantId, id)
+        // 记录审计（P8：username 暂取不到用户信息，传空串）
+        auditRecorder.record(
+            AuditLog(tenantId = tenantId, username = "", action = "APP_DELETE", targetType = "app", targetId = id)
+        )
     }
 
     /** 发布：保留版本快照（version_no 自增），DRAFT/PUBLISHED 均可重复发布。 */
@@ -62,6 +80,10 @@ class AppApplicationService(
             )
         )
         appRepository.save(app.published())
+        // 记录审计（P8：username 暂取不到用户信息，传空串）
+        auditRecorder.record(
+            AuditLog(tenantId = tenantId, username = "", action = "APP_PUBLISH", targetType = "app", targetId = id)
+        )
         return version
     }
 }

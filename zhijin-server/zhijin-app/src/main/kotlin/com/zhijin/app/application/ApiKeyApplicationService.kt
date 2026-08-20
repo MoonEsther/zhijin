@@ -3,6 +3,8 @@ package com.zhijin.app.application
 import com.zhijin.app.domain.apikey.ApiKeyRepository
 import com.zhijin.app.domain.apikey.AppApiKey
 import com.zhijin.app.interfaces.dto.ApiKeyResponse
+import com.zhijin.billingaudit.domain.audit.AuditLog
+import com.zhijin.billingaudit.domain.audit.AuditRecorder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.security.MessageDigest
@@ -13,7 +15,11 @@ import java.util.UUID
  * 校验/吊销均基于哈希与 status 状态，杜绝明文二次恢复。
  */
 @Service
-class ApiKeyApplicationService(private val apiKeyRepository: ApiKeyRepository) {
+class ApiKeyApplicationService(
+    private val apiKeyRepository: ApiKeyRepository,
+    /** 审计记录端口（依赖倒置注入，默认 no-op 保证无适配器时流程不受影响）。 */
+    private val auditRecorder: AuditRecorder = AuditRecorder {},
+) {
 
     /** 生成新 API Key：返回明文一次，入库 keyHash 为 SHA-256(plain)。 */
     @Transactional
@@ -26,6 +32,10 @@ class ApiKeyApplicationService(private val apiKeyRepository: ApiKeyRepository) {
                 keyHash = sha256(plain), name = name, status = 1,
             )
         )
+        // 记录审计（P8：username 暂取不到用户信息，传空串）
+        auditRecorder.record(
+            AuditLog(tenantId = tenantId, username = "", action = "API_KEY_GENERATE", targetType = "api_key", targetId = key.id)
+        )
         // save 回填自增主键 id 后，方可组装响应
         return ApiKeyResponse(id = key.id!!, plainKey = plain, name = name)
     }
@@ -35,6 +45,10 @@ class ApiKeyApplicationService(private val apiKeyRepository: ApiKeyRepository) {
     fun revoke(tenantId: Long, appId: Long, keyId: Long) {
         val key = apiKeyRepository.findById(tenantId, keyId) ?: return
         apiKeyRepository.save(key.revoked())
+        // 记录审计（P8：username 暂取不到用户信息，传空串）
+        auditRecorder.record(
+            AuditLog(tenantId = tenantId, username = "", action = "API_KEY_REVOKE", targetType = "api_key", targetId = keyId)
+        )
     }
 
     /** 校验 API Key（供开放 API 鉴权用）：仅当哈希命中且 status=1 时通过。 */

@@ -1,5 +1,7 @@
 package com.zhijin.chat.application
 
+import com.zhijin.billingaudit.domain.usage.UsageRecord
+import com.zhijin.billingaudit.domain.usage.UsageRecorder
 import com.zhijin.chat.domain.session.ChatSession
 import com.zhijin.chat.domain.session.SessionRepository
 import com.zhijin.chat.interfaces.dto.ChatRequest
@@ -31,6 +33,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 class ChatApplicationService(
     private val sessionRepository: SessionRepository,
     private val modelComponent: ModelComponent,
+    /** 用量记录端口（依赖倒置注入，默认 no-op 保证无适配器时流程不受影响）。 */
+    private val usageRecorder: UsageRecorder = UsageRecorder {},
 ) {
     private val log = LoggerFactory.getLogger(ChatApplicationService::class.java)
 
@@ -66,9 +70,21 @@ class ChatApplicationService(
                 log.info("对话会话创建: tenantId={}, appId={}, sessionId={}", tenantId, appId, session.id)
 
                 val schema = DefaultWorkflow.build(req.message)
+                val startedAt = System.currentTimeMillis()
                 val result = runBlocking { runner.execute(schema, VariableStore()) }
                 val reply = result.finalOutput?.toString() ?: ""
                 sessionRepository.appendMessage(session.appendMessage("assistant", reply))
+
+                // 记录用量（V1：模型调用一次 + 工作流执行延迟；token 计数待计划 C 填充）
+                usageRecorder.record(
+                    UsageRecord(
+                        tenantId = tenantId,
+                        appId = appId,
+                        sessionId = session.id,
+                        model = "default",
+                        latencyMs = (System.currentTimeMillis() - startedAt).toInt(),
+                    )
+                )
 
                 emitter.send(SseEmitter.event().name("message").data(reply))
                 emitter.complete()

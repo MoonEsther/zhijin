@@ -6,6 +6,8 @@ import com.zhijin.app.domain.app.AppRepository
 import com.zhijin.app.domain.app.AppStatus
 import com.zhijin.app.domain.app.AppVersion
 import com.zhijin.app.domain.app.AppVersionRepository
+import com.zhijin.billingaudit.domain.audit.AuditLog
+import com.zhijin.billingaudit.domain.audit.AuditRecorder
 import com.zhijin.common.exception.BizException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -139,5 +141,24 @@ class AppApplicationServiceTest {
     fun `下线应用不可发布抛业务异常`() {
         `when`(appRepository.findById(1L, 1L)).thenReturn(app(status = AppStatus.OFFLINE))
         assertThrows(BizException::class.java) { service.publish(1L, 1L) }
+    }
+
+    @Test
+    fun `创建应用记录审计`() {
+        `when`(appRepository.save(anyApp())).thenAnswer(backfillId())
+        // 捕获型 AuditRecorder：验证 create 成功后记录 APP_CREATE 审计
+        val auditLogs = mutableListOf<AuditLog>()
+        val serviceWithAudit = AppApplicationService(
+            appRepository,
+            versionRepository,
+            AuditRecorder { auditLogs.add(it) },
+        )
+        serviceWithAudit.create(1L, "客服助手", "售前咨询", "")
+
+        assertEquals(1, auditLogs.size)
+        assertEquals("APP_CREATE", auditLogs.first().action)
+        assertEquals("app", auditLogs.first().targetType)
+        assertEquals(1L, auditLogs.first().targetId)
+        assertEquals(1L, auditLogs.first().tenantId)
     }
 }

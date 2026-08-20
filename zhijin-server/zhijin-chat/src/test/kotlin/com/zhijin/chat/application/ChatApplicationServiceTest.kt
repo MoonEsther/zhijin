@@ -1,5 +1,7 @@
 package com.zhijin.chat.application
 
+import com.zhijin.billingaudit.domain.usage.UsageRecord
+import com.zhijin.billingaudit.domain.usage.UsageRecorder
 import com.zhijin.chat.domain.session.ChatMessage
 import com.zhijin.chat.domain.session.ChatSession
 import com.zhijin.chat.domain.session.SessionRepository
@@ -72,5 +74,36 @@ class ChatApplicationServiceTest {
         verify(repo, timeout(2000)).appendMessage(
             ChatMessage(id = null, sessionId = 1L, role = "assistant", content = "AI回复")
         )
+    }
+
+    @Test
+    fun `聊天后记录用量`() {
+        // 请求线程需有租户上下文（chatAsync 在派生子线程前捕获）
+        TenantContextHolder.setTenantId(1L)
+        val repo = mock(SessionRepository::class.java)
+        val created = ChatSession(id = null, tenantId = 1L, appId = 1L, title = "")
+        `when`(repo.create(created))
+            .thenReturn(ChatSession(id = 1L, tenantId = 1L, appId = 1L, title = ""))
+
+        // 捕获型 UsageRecorder：验证 chatAsync 完成后确实记录了一条用量
+        val captured = java.util.Collections.synchronizedList(mutableListOf<UsageRecord>())
+        val service = ChatApplicationService(
+            repo,
+            StubModelComponent("AI回复"),
+            UsageRecorder { captured.add(it) },
+        )
+        service.chatAsync(ChatRequest(appId = 1L, message = "你好"), SseEmitter())
+
+        // chatAsync 在后台线程异步执行，轮询等待用量记录产生（与仓库断言一致的 2s 上限）
+        val deadline = System.currentTimeMillis() + 2000
+        while (captured.isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+        }
+        assert(captured.isNotEmpty()) { "聊天后应记录一条用量" }
+        val record = captured.first()
+        assertEquals(1L, record.tenantId)
+        assertEquals(1L, record.appId)
+        assertEquals(1L, record.sessionId)
+        assertEquals("default", record.model)
     }
 }

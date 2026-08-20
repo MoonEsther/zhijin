@@ -325,3 +325,16 @@ git commit -m "docs(plans): B6 追加执行修正记录"
 ## 执行交接
 
 B6 完成后 → **计划 C**（Python 真实供应商，返回真实 token → usage_record 填充 token 计数）→ **Plan D**（前端控制台）。
+
+---
+
+## 执行修正记录（2026-08-20 实现期间的真实发现，均已落地并验证）
+
+| # | 修正/发现 | 说明 |
+|---|---|---|
+| 1 | 端口参数用**默认 no-op 实现**（`UsageRecorder {}` / `AuditRecorder {}`） | 既有测试构造签名不变（P4）；Spring 注入真实适配 Bean，测试传 capturing recorder 验证 |
+| 2 | `toResponse()` 放 **DTO companion**（非实例扩展），控制器调 `DTO.toResponse(it)` | 任务片段写的是实例调用，与「DTO companion」要求冲突，按 companion 落地 |
+| 3 | `ApiKeyApplicationService` 的 generate/revoke 审计已接入但未单测 | 编译/运行由同一模式覆盖；后续可补（非必须） |
+| 4 | 构建在 JDK 25（机器默认）target Java 17 | 与既有绿构建一致 |
+
+> **端到端回归结论（真 PG + 真 Nacos + Python 桩）**：OAuth2 授权码流 → 创建应用 → 发布 → API Key → chat ×2 → **用量汇总返回 app 5 两次调用**（totalTokens=0，计划 C 填 token）✅ → **审计 3 条**（APP_CREATE/APP_PUBLISH/API_KEY_GENERATE）✅。B6 全链路通过，62 测试全绿。

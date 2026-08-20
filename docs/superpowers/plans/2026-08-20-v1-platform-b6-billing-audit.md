@@ -6,6 +6,8 @@
 
 **Architecture:** DDD 四层（对齐刚完成的改造范式）：`domain`（UsageRecord/AuditLog 富血实体 + 仓储接口）→ `application`（UsageApplicationService/AuditApplicationService）→ `infrastructure`（Record + RepositoryImpl + Mapper）→ `interfaces`（用量查询接口）。接入点：`zhijin-chat` 的 `ChatApplicationService` 每次 chat 落用量；`zhijin-app` 的管理用例落审计。token 计数字段 V1 预留（计划 C 真供应商返回后填充），V1 记录「每次模型调用 + 延迟」。
 
+> **版本说明（2026-08-20 v2）**：按 `docs/superpowers/feedback/2026-08-20-v1-platform-b6-billing-audit-feedback.md` 修订——P1 去署名；P2a/P2b 补 pom 依赖；P3 Mapper 统一顶层 `com.zhijin.billingaudit.mapper`；P4 测试构造同步；P5 分页用 domain `PageResult`（不用 MyBatis-Plus 类型）；P6-P9 轻微项注记。
+
 **Tech Stack:** Spring Boot 4 · Kotlin · MyBatis-Plus · Flyway V5 · DDD 分层（复用 zhijin-app 范式）
 
 **设计依据:** `2026-08-17-agent-platform-design.md` §6（billing/audit）、§10 数据流 B（全程落账）、§12.1 七大原则。
@@ -28,14 +30,16 @@
 zhijin-server/zhijin-billing-audit/src/main/kotlin/com/zhijin/billingaudit/
 ├── domain/
 │   ├── usage/UsageRecord.kt + UsageRepository.kt + UsageRecorder.kt(fun interface 端口)
-│   └── audit/AuditLog.kt + AuditRepository.kt + AuditRecorder.kt(fun interface 端口)
+│   └── audit/AuditLog.kt + AuditRepository.kt + AuditRecorder.kt(fun interface 端口) + PageResult.kt(分页值对象)
 ├── application/
 │   ├── UsageApplicationService.kt（record + 汇总查询）
 │   └── AuditApplicationService.kt（record + 分页查询）
 ├── infrastructure/
 │   ├── persistence/UsageRecordRecord.kt + UsageRepositoryImpl.kt
-│   ├── persistence/AuditLogRecord.kt + AuditRepositoryImpl.kt
-│   └── mapper/UsageRecordMapper.kt + AuditLogMapper.kt
+│   └── persistence/AuditLogRecord.kt + AuditRepositoryImpl.kt
+├── mapper/                       ← Mapper 在顶层包 com.zhijin.billingaudit.mapper（@MapperScan 硬编码，不放 infrastructure）
+│   ├── UsageRecordMapper.kt
+│   └── AuditLogMapper.kt
 ├── interfaces/
 │   ├── UsageController.kt
 │   ├── AuditLogController.kt
@@ -131,7 +135,24 @@ fun interface UsageRecorder {
 }
 ```
 
-`domain/audit/AuditLog.kt` + `AuditRepository.kt` + `AuditRecorder.kt`（同风格：AuditLog 富血实体 + AuditRepository(summarizeBy/分页) + `fun interface AuditRecorder`）。
+`domain/audit/AuditLog.kt` + `AuditRepository.kt` + `AuditRecorder.kt`（同风格：AuditLog 富血实体 + `AuditRepository.page(...)` 分页 + `fun interface AuditRecorder`）：
+```kotlin
+package com.zhijin.billingaudit.domain.audit
+
+/** 分页结果值对象（domain 层，不依赖 MyBatis-Plus IPage——P5：domain 零框架依赖）。 */
+data class PageResult<T>(val items: List<T>, val total: Long)
+
+/** 审计仓储接口（分页返回 domain 类型，不用 MyBatis-Plus IPage/Page）。 */
+interface AuditRepository {
+    fun save(log: AuditLog): AuditLog
+    fun page(tenantId: Long, page: Int, size: Int): PageResult<AuditLog>
+}
+
+/** 审计记录端口（供管理操作依赖倒置注入）。 */
+fun interface AuditRecorder {
+    fun record(log: AuditLog)
+}
+```
 
 - [ ] **Step 3: 构建验证**
 
@@ -145,7 +166,7 @@ cd C:\mypro\JavaProject\zhijin
 git add zhijin-server/zhijin-billing-audit/
 git commit -m "feat(billing-audit): 用量与审计数据模型 + domain 实体/仓储"
 ```
-（末尾加 `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`；不动 `zhijin.iml`。）
+（不动 `zhijin.iml`。）
 
 ---
 
@@ -179,9 +200,9 @@ class UsageRepositoryImpl(private val mapper: UsageRecordMapper) : UsageReposito
 ```
 > 说明：汇总用内存分组（V1 量小可接受）；量大后换 SQL group by。
 
-`AuditLogRecord.kt`/`AuditLogMapper.kt`/`AuditRepositoryImpl.kt` 同理（save + 分页 `selectPage`）。
+`AuditLogRecord.kt`/`AuditLogMapper.kt`/`AuditRepositoryImpl.kt` 同理，`page()` 在实现内部用 `selectPage` 并转换为 domain `PageResult<AuditLog>`（P5：domain 接口不暴露 MyBatis-Plus 类型）。
 
-**@MapperScan**：`MybatisPlusConfig` 需加 `"com.zhijin.billingaudit.mapper"`（必要修改）。
+**@MapperScan**：`MybatisPlusConfig` 需加 `"com.zhijin.billingaudit.mapper"`（P3：Mapper 在顶层 `com.zhijin.billingaudit.mapper`，与 @MapperScan 路径一致；必要修改）。
 
 - [ ] **Step 2: application 服务**
 
@@ -212,8 +233,11 @@ git commit -m "feat(billing-audit): 用量/审计持久化与应用服务"
 **Files:**
 - Create: `interfaces/UsageController.kt`、`interfaces/AuditLogController.kt`、`interfaces/dto/`
 - Modify: `zhijin-chat/application/ChatApplicationService.kt`（接入 UsageRecorder）
-- Modify: `zhijin-app/application/AppApplicationService.kt`（接入 AuditRecorder）
-- Create: `zhijin-app`/`zhijin-chat` 的 `UsageRecorder`/`AuditRecorder` 适配 Bean（避免循环依赖）
+- Modify: `zhijin-app/application/AppApplicationService.kt`、`ApiKeyApplicationService.kt`（接入 AuditRecorder）
+- Create: `zhijin-app` 的 `UsageRecorder`/`AuditRecorder` 适配 Bean（避免循环依赖，同 ApiKeyResolverConfig）
+- Modify: `zhijin-chat/pom.xml`（**加 `com.zhijin:zhijin-billing-audit` 依赖，P2a**——ChatApplicationService import UsageRecorder 必需）
+- Modify: `zhijin-billing-audit/pom.xml`（**加 `spring-boot-starter-web`，P2b**——interfaces 控制器需要）
+- Modify: 测试同步更新（**P4**）——`ChatApplicationServiceTest`/`AppApplicationServiceTest`/`ApiKeyApplicationServiceTest` 构造签名变（加 UsageRecorder/AuditRecorder 参数），改传 mock 或 no-op 端口实现，否则编译失败
 
 - [ ] **Step 1: 接口层**
 
@@ -250,7 +274,9 @@ usageRecorder.record(
 ```kotlin
 auditRecorder.record(AuditLog(tenantId = tenantId, username = currentUser(), action = "APP_PUBLISH", targetType = "app", targetId = id))
 ```
-（currentUser 从 SecurityContext/JwtTenantFilter 上下文取，V1 简化传 username。）
+（currentUser 从 SecurityContext/JwtTenantFilter 上下文取，V1 简化传 username；**P8：取不到传空串**。）
+
+> **轻微项注记（P6-P9）**：P6 `summarizeByApp` 建议 start 必填或默认近 30 天防 OOM（可选）；P7 `UsageController` 的 `start/end: LocalDateTime?` 加 `@DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)` 并在接口文档注明 ISO-8601 格式；P9 chat 接入 `latencyMs` 在 chat 用例起止处计时；P10 测试数以实际为准。
 
 - [ ] **Step 4: 验证 + Commit**
 

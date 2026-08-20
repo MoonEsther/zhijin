@@ -1,7 +1,8 @@
-package com.zhijin.chat.service
+package com.zhijin.chat.application
 
-import com.zhijin.chat.dto.ChatRequest
-import com.zhijin.chat.workflow.DefaultWorkflow
+import com.zhijin.chat.domain.session.ChatSession
+import com.zhijin.chat.domain.session.SessionRepository
+import com.zhijin.chat.interfaces.dto.ChatRequest
 import com.zhijin.framework.tenant.TenantContextHolder
 import com.zhijin.orchestrator.context.VariableStore
 import com.zhijin.orchestrator.executor.NodeExecutorRegistry
@@ -19,19 +20,19 @@ import org.springframework.web.context.request.ServletRequestAttributes
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 
 /**
- * 聊天服务：会话/消息持久化 + 默认工作流执行 + SSE 流式返回。
+ * 聊天应用服务：chat 用例（建会话 → 追加用户消息 → 驱动默认工作流 → 追加助手回复 → SSE 流式返回）。
  *
- * 执行流程：
- * 1) 在请求线程解析租户（由 API Key 鉴权过滤器写入上下文）与应用（请求体或过滤器属性）；
- * 2) 派生工作线程执行：因租户上下文是 ThreadLocal，需在子线程手动重放租户；
- * 3) 创建/复用会话、持久化用户消息 → 跑默认工作流(start→llm→end) → 持久化助手回复 → SSE 推送。
+ * 由原 service/ChatService 迁移而来，逻辑保持一致；依赖倒置后只面向两个端口：
+ * - 领域仓储 [SessionRepository]：会话/消息持久化（实现见 infrastructure.persistence）；
+ * - [ModelComponent]：模型端口（抽象在 orchestrator 的 model 包，LLM 节点依赖它）。
+ * 工作流执行引擎（WorkflowRunner + 节点注册）为编排侧领域服务，在此编排组装。
  */
 @Service
-class ChatService(
-    private val sessionService: SessionService,
+class ChatApplicationService(
+    private val sessionRepository: SessionRepository,
     private val modelComponent: ModelComponent,
 ) {
-    private val log = LoggerFactory.getLogger(ChatService::class.java)
+    private val log = LoggerFactory.getLogger(ChatApplicationService::class.java)
 
     /** 请求属性 key：由 ApiKeyAuthFilter 写入解析出的应用 ID。 */
     private companion object {
@@ -58,14 +59,16 @@ class ChatService(
             try {
                 // 子线程无租户上下文，手动重放以保证 DB 写入走租户隔离
                 TenantContextHolder.setTenantId(tenantId)
-                val session = sessionService.createSession(tenantId, appId)
-                sessionService.appendMessage(tenantId, session, "user", req.message)
+                val session = sessionRepository.create(
+                    ChatSession(id = null, tenantId = tenantId, appId = appId, title = "")
+                )
+                sessionRepository.appendMessage(session.appendMessage("user", req.message))
                 log.info("对话会话创建: tenantId={}, appId={}, sessionId={}", tenantId, appId, session.id)
 
                 val schema = DefaultWorkflow.build(req.message)
                 val result = runBlocking { runner.execute(schema, VariableStore()) }
                 val reply = result.finalOutput?.toString() ?: ""
-                sessionService.appendMessage(tenantId, session, "assistant", reply)
+                sessionRepository.appendMessage(session.appendMessage("assistant", reply))
 
                 emitter.send(SseEmitter.event().name("message").data(reply))
                 emitter.complete()

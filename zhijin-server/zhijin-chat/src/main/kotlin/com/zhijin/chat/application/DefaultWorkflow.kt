@@ -1,4 +1,4 @@
-package com.zhijin.chat.workflow
+package com.zhijin.chat.application
 
 import com.zhijin.orchestrator.model.Connection
 import com.zhijin.orchestrator.model.FieldInfo
@@ -8,7 +8,12 @@ import com.zhijin.orchestrator.model.NodeType
 import com.zhijin.orchestrator.model.OutputField
 import com.zhijin.orchestrator.model.WorkflowSchema
 
-/** 默认 LLM-only 工作流：start → llm(prompt=用户消息) → end。 */
+/**
+ * 默认 LLM-only 工作流：start → llm(prompt=用户消息) → end。
+ *
+ * 归属说明：工作流构建属于 chat 用例的编排辅助，放在 application 层
+ * （产出的是 orchestrator 领域模型 WorkflowSchema，作为应用服务驱动引擎的输入）。
+ */
 object DefaultWorkflow {
     fun build(prompt: String): WorkflowSchema = WorkflowSchema(
         id = "wf-default",

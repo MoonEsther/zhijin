@@ -2,7 +2,7 @@ package com.zhijin.app.service
 
 import com.zhijin.app.dto.AppRequest
 import com.zhijin.app.dto.AppResponse
-import com.zhijin.app.entity.App
+import com.zhijin.app.infrastructure.persistence.AppRecord
 import com.zhijin.app.mapper.AppMapper
 import com.zhijin.common.exception.BizException
 import com.zhijin.common.web.ResultCode
@@ -14,7 +14,7 @@ import java.util.UUID
 class AppService(private val appMapper: AppMapper) {
 
     fun create(tenantId: Long, req: AppRequest): AppResponse {
-        val app = App(
+        val app = AppRecord(
             tenantId = tenantId,
             appKey = "app_" + UUID.randomUUID().toString().replace("-", "").take(16),
             name = req.name,
@@ -47,7 +47,7 @@ class AppService(private val appMapper: AppMapper) {
         appMapper.deleteById(id)
     }
 
-    private fun App.toResponse() = AppResponse(
+    private fun AppRecord.toResponse() = AppResponse(
         id = id!!, appKey = appKey, name = name, description = description,
         iconUri = iconUri, status = status,
     )

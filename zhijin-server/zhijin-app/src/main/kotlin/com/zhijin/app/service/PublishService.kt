@@ -2,8 +2,8 @@ package com.zhijin.app.service
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper
 import com.zhijin.app.dto.AppVersionResponse
-import com.zhijin.app.entity.App
-import com.zhijin.app.entity.AppVersion
+import com.zhijin.app.infrastructure.persistence.AppRecord
+import com.zhijin.app.infrastructure.persistence.AppVersionRecord
 import com.zhijin.app.mapper.AppMapper
 import com.zhijin.app.mapper.AppVersionMapper
 import com.zhijin.common.exception.BizException
@@ -26,11 +26,11 @@ class PublishService(
 
         // 按当前版本数量自增得到新版本号（快照不可变，因此只增不删）
         val next = versionMapper.selectCount(
-            QueryWrapper<AppVersion>().eq("app_id", appId).eq("tenant_id", tenantId)
+            QueryWrapper<AppVersionRecord>().eq("app_id", appId).eq("tenant_id", tenantId)
         ).toInt() + 1
 
         // 生成发布快照：workflowDsl / modelSnapshot 当前为占位空值，后续任务落地
-        val version = AppVersion(
+        val version = AppVersionRecord(
             tenantId = tenantId, appId = appId, versionNo = next,
             workflowDsl = null, modelSnapshot = null, status = 1,
             publishTime = LocalDateTime.now(),

@@ -1,7 +1,7 @@
 package com.zhijin.app
 
 import com.zhijin.app.dto.AppRequest
-import com.zhijin.app.entity.App
+import com.zhijin.app.infrastructure.persistence.AppRecord
 import com.zhijin.app.mapper.AppMapper
 import com.zhijin.app.service.AppService
 import com.zhijin.common.exception.BizException
@@ -22,9 +22,9 @@ class AppServiceTest {
     @Test
     fun `创建应用生成appKey并返回`() {
         // 模拟 MyBatis-Plus insert 后回填自增主键 id（IdType.AUTO 的真实行为）
-        `when`(mapper.insert(any(App::class.java))).thenAnswer(object : Answer<Int> {
+        `when`(mapper.insert(any(AppRecord::class.java))).thenAnswer(object : Answer<Int> {
             override fun answer(invocation: InvocationOnMock): Int {
-                invocation.getArgument<App>(0).id = 1L
+                invocation.getArgument<AppRecord>(0).id = 1L
                 return 1
             }
         })

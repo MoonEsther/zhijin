@@ -15,11 +15,19 @@
 ## 关键决策
 
 - **供应商协议**：qwen / openai / deepseek 都走 **OpenAI 兼容协议**（`/v1/chat/completions`）；claude 走 **Anthropic Messages API**（`/v1/messages`）。Python 侧统一适配器模式。
-- **Key 下发**：Kotlin `HttpModelComponent.complete(prompt, modelName, providerKeyId)` 从 `ModelProviderKey` 表取加密 Key，解密后随请求 body 传给 Python（`{model, provider, api_key, messages}`）。**Python 不落盘 Key**（决策 21）。
-- **Token 回填**：Python 返回 `usage: {prompt_tokens, completion_tokens, total_tokens}` → Kotlin 解析 → `usage_record` 回填真实 token 计数（V1 之前为 0）。
-- **供应商选择**：请求 body 带 `provider` 字段（`qwen`/`claude`/`openai`/`deepseek`），Python 路由到对应适配器。
-- **错误处理**：供应商返回错误（401/429/500）→ Python 转 5xx 给 Kotlin → Kotlin 落 `usage_record`（`latency_ms` + 错误标记，token 为 0）。
-- **V1 简化**：不做供应商负载均衡/重试/熔断（留 V2）；不做流式 token 计数（V1 一次性返回）。
+- **Key 下发（端口模式，解决 C1）**：
+  - 在 `zhijin-orchestrator/domain/` 定义端口：`fun interface ModelKeyResolver { fun resolvePlainKey(tenantId: Long, providerKeyId: Long): String? }`
+  - 在 `zhijin-app/config/` 提供适配 Bean：注入 `ModelConfigApplicationService.getPlainKey` 实现
+  - `HttpModelComponent` 构造注入 `ModelKeyResolver`，调用时解密 Key 后传 `api_key` 明文给 Python（不落盘 Python 侧，决策 21）
+- **Token 回填（方案 A，解决 C2，保持引擎语义）**：
+  - `ModelComponent.complete` 返回类型改为 `ChatCompletionResult(content: String, usage: Usage?)`
+  - `LlmNode` 把 usage 写入 `NodeResult.outputs["usage"]`
+  - `WorkflowRunner` 结果透传 usage 到 `ChatApplicationService`
+  - `ChatApplicationService` 从执行结果取 usage 回填 `usage_record`
+  - 同步改：`StubModelComponent`、`LlmNode`、`HttpModelComponent`、测试
+- **Supplier 选择**：请求 body 带 `provider` 字段（`qwen`/`claude`/`openai`/`deepseek`），Python 路由到对应适配器。
+- **错误处理**：供应商返回错误（401/429/500）→ Python 转 5xx 给 Kotlin → V1 只落成功记录（C4：`usage_record` 无 error 列）。
+- **V1 简化**：不做供应商负载均衡/重试/熔断（留 V2）；不做流式 token 计数（V1 一次性返回）；provider/model 从 `AppModelConfig` 取（C6）。
 
 ---
 
@@ -39,12 +47,27 @@ zhijin-ai/app/
 └── main.py                        ← 挂载 gateway router
 
 zhijin-server/zhijin-orchestrator/
-└── src/main/kotlin/com/zhijin/orchestrator/infrastructure/model/
-    └── HttpModelComponent.kt      ← 改造：从 DB 取 Key 解密传给 Python
+├── src/main/kotlin/com/zhijin/orchestrator/
+│   ├── domain/
+│   │   ├── ModelComponent.kt      ← 改造：返回 ChatCompletionResult(content, usage)
+│   │   └── ModelKeyResolver.kt    ← 新增：端口接口（解决 C1）
+│   ├── infrastructure/model/
+│   │   └── HttpModelComponent.kt  ← 改造：注入 ModelKeyResolver，传 api_key 明文
+│   └── domain/nodes/
+│       ├── LlmNode.kt             ← 改造：把 usage 写入 NodeResult.outputs["usage"]
+│       └── StubModelComponent.kt  ← 改造：返回 ChatCompletionResult
 
 zhijin-server/zhijin-chat/
 └── src/main/kotlin/com/zhijin/chat/application/
-    └── ChatApplicationService.kt  ← 改造：解析 Python 返回的 usage 回填 usage_record
+    └── ChatApplicationService.kt  ← 改造：从执行结果取 usage 回填 usage_record
+
+zhijin-server/zhijin-app/
+└── src/main/kotlin/com/zhijin/app/config/
+    └── ModelKeyResolverConfig.kt  ← 新增：适配 Bean（解决 C1）
+
+zhijin-server/zhijin-ai-client/
+└── src/main/kotlin/com/zhijin/aiclient/
+    └── AiClient.kt                ← 改造：解析 usage（snake_case → camelCase，C7）
 ```
 
 ---
@@ -266,129 +289,329 @@ git commit -m "feat(ai): 模型网关真实供应商(qwen/claude/openai/deepseek
 
 ---
 
-## Task 2: Kotlin HttpModelComponent 改造（从 DB 取 Key 解密下发）
+## Task 2: Kotlin ModelComponent 改造 + ModelKeyResolver 端口（解决 C1/C2/C3）
 
 **Files:**
-- Modify: `zhijin-server/zhijin-orchestrator/src/main/kotlin/com/zhijin/orchestrator/infrastructure/model/HttpModelComponent.kt`
-- Modify: `zhijin-server/zhijin-orchestrator/src/main/kotlin/com/zhijin/orchestrator/domain/ModelComponent.kt`（接口签名加 providerKeyId 参数）
-- Modify: `zhijin-server/zhijin-chat/src/main/kotlin/com/zhijin/chat/application/ChatApplicationService.kt`（传 providerKeyId）
+- Create: `zhijin-server/zhijin-orchestrator/src/main/kotlin/com/zhijin/orchestrator/domain/ModelKeyResolver.kt`（端口接口，解决 C1）
+- Modify: `zhijin-server/zhijin-orchestrator/src/main/kotlin/com/zhijin/orchestrator/domain/ModelComponent.kt`（返回 `ChatCompletionResult`，解决 C2）
+- Modify: `zhijin-server/zhijin-orchestrator/src/main/kotlin/com/zhijin/orchestrator/domain/nodes/LlmNode.kt`（把 usage 写入 `NodeResult.outputs["usage"]`，解决 C2）
+- Modify: `zhijin-server/zhijin-orchestrator/src/main/kotlin/com/zhijin/orchestrator/domain/nodes/StubModelComponent.kt`（返回 `ChatCompletionResult`）
+- Modify: `zhijin-server/zhijin-orchestrator/src/main/kotlin/com/zhijin/orchestrator/infrastructure/model/HttpModelComponent.kt`（注入 `ModelKeyResolver`，传 `api_key` 明文，解决 C3）
+- Create: `zhijin-server/zhijin-app/src/main/kotlin/com/zhijin/app/config/ModelKeyResolverConfig.kt`（适配 Bean，解决 C1）
+- Modify: 相关测试（`HttpModelComponentTest`、`LlmNodeTest`）
 
-- [ ] **Step 1: 扩展 ModelComponent 接口**
+- [ ] **Step 1: 创建 ModelKeyResolver 端口接口（解决 C1）**
 
-`domain/ModelComponent.kt`：
+`zhijin-orchestrator/domain/ModelKeyResolver.kt`：
 ```kotlin
-/** 模型组件抽象（依赖倒置）。 */
-interface ModelComponent {
-    /** 调用模型，返回 assistant 内容。providerKeyId 为加密 Key 的 ID，从 DB 取。 */
-    suspend fun complete(prompt: String, modelName: String, providerKeyId: Long? = null): String
+package com.zhijin.orchestrator.domain
+
+/**
+ * 模型 Key 解析端口（依赖倒置，解决 C1 模块依赖方向问题）。
+ * 实现在 zhijin-app（有 ModelProviderKey 表访问权限），通过适配 Bean 注入。
+ */
+fun interface ModelKeyResolver {
+    /**
+     * 根据租户 ID 和 Key ID 返回解密后的明文 Key。
+     * 返回 null 表示 Key 不存在或已禁用。
+     */
+    fun resolvePlainKey(tenantId: Long, providerKeyId: Long): String?
 }
 ```
-（默认 `providerKeyId = null` 保持向后兼容；V1 不传则用默认供应商 + 环境变量 Key。）
 
-- [ ] **Step 2: HttpModelComponent 改造**
+- [ ] **Step 2: 改造 ModelComponent 接口（解决 C2）**
 
-`infrastructure/model/HttpModelComponent.kt`：
+`zhijin-orchestrator/domain/ModelComponent.kt`：
 ```kotlin
+package com.zhijin.orchestrator.domain
+
+/** 模型调用结果（含 token 使用量）。 */
+data class ChatCompletionResult(
+    val content: String,
+    val usage: Usage? = null,
+)
+
+/** Token 使用量。 */
+data class Usage(
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val totalTokens: Int = 0,
+)
+
+/** 模型组件抽象（依赖倒置）。 */
+interface ModelComponent {
+    /**
+     * 调用模型，返回 assistant 内容 + token 使用量。
+     * providerKeyId 为加密 Key 的 ID，通过 ModelKeyResolver 解密。
+     */
+    suspend fun complete(prompt: String, modelName: String, providerKeyId: Long? = null): ChatCompletionResult
+}
+```
+
+- [ ] **Step 3: 改造 StubModelComponent**
+
+`zhijin-orchestrator/domain/nodes/StubModelComponent.kt`：
+```kotlin
+package com.zhijin.orchestrator.domain.nodes
+
+import com.zhijin.orchestrator.domain.ChatCompletionResult
+import com.zhijin.orchestrator.domain.ModelComponent
+import com.zhijin.orchestrator.domain.Usage
+
+/** 测试用桩：返回固定文本 + 模拟 usage。 */
+class StubModelComponent(private val reply: String = "模型返回") : ModelComponent {
+    override suspend fun complete(prompt: String, modelName: String, providerKeyId: Long?): ChatCompletionResult =
+        ChatCompletionResult(
+            content = reply,
+            usage = Usage(promptTokens = 10, completionTokens = 20, totalTokens = 30),
+        )
+}
+```
+
+- [ ] **Step 4: 改造 LlmNode（解决 C2）**
+
+`zhijin-orchestrator/domain/nodes/LlmNode.kt`：
+```kotlin
+package com.zhijin.orchestrator.domain.nodes
+
+import com.zhijin.orchestrator.domain.ModelComponent
+import com.zhijin.orchestrator.domain.NodeContext
+import com.zhijin.orchestrator.domain.NodeExecutor
+import com.zhijin.orchestrator.domain.NodeResult
+import com.zhijin.orchestrator.domain.NodeSchema
+
+/** LLM 节点：调用模型，把 usage 写入 outputs["usage"]（解决 C2）。 */
+class LlmNode(private val model: ModelComponent) : NodeExecutor {
+    override suspend fun invoke(ctx: NodeContext, node: NodeSchema): NodeResult {
+        val prompt = node.inputs.firstOrNull { it.key == "prompt" }?.let { ctx.variableStore.resolveRef(it.source) }?.toString() ?: ""
+        val modelName = node.configs["model"]?.toString() ?: "default"
+        val providerKeyId = (node.configs["providerKeyId"] as? Number)?.toLong()
+        val result = model.complete(prompt, modelName, providerKeyId)
+        val outKey = node.outputs.firstOrNull()?.key ?: "output"
+        return NodeResult(
+            outputs = mapOf(
+                outKey to result.content,
+                "usage" to result.usage,  // 把 usage 透传给 WorkflowRunner
+            )
+        )
+    }
+}
+```
+
+- [ ] **Step 5: 改造 HttpModelComponent（解决 C1/C3）**
+
+`zhijin-orchestrator/infrastructure/model/HttpModelComponent.kt`：
+```kotlin
+package com.zhijin.orchestrator.infrastructure.model
+
+import com.zhijin.aiclient.AiClient
+import com.zhijin.orchestrator.domain.ChatCompletionResult
+import com.zhijin.orchestrator.domain.ModelComponent
+import com.zhijin.orchestrator.domain.ModelKeyResolver
+
 /**
- * 真实模型组件：从 DB 取加密 Key 解密后传给 Python。
+ * 真实模型组件：通过 ModelKeyResolver 解密 Key，传 api_key 明文给 Python（解决 C1/C3）。
  * 请求体：{model, provider, api_key, messages}
  * 响应体：{choices[0].message.content, usage: {prompt_tokens, completion_tokens, total_tokens}}
  */
-class HttpModelComponent(private val aiClient: AiClient) : ModelComponent {
+class HttpModelComponent(
+    private val aiClient: AiClient,
+    private val keyResolver: ModelKeyResolver,  // 解决 C1：端口模式
+) : ModelComponent {
 
-    override suspend fun complete(prompt: String, modelName: String, providerKeyId: Long?): String =
-        aiClient.complete(prompt, modelName, providerKeyId)
+    override suspend fun complete(prompt: String, modelName: String, providerKeyId: Long?): ChatCompletionResult {
+        // 解密 Key（解决 C1）
+        val plainKey = providerKeyId?.let { keyResolver.resolvePlainKey(0L, it) } ?: ""
+        // 传 api_key 明文给 Python（解决 C3：不落盘 Python 侧）
+        return aiClient.completeWithUsage(prompt, modelName, "qwen", plainKey)
+    }
 }
 ```
 
-- [ ] **Step 3: AiClient 改造**
+- [ ] **Step 6: 创建 ModelKeyResolverConfig 适配 Bean（解决 C1）**
 
-`zhijin-ai-client/src/main/kotlin/com/zhijin/aiclient/AiClient.kt`：
+`zhijin-app/config/ModelKeyResolverConfig.kt`：
 ```kotlin
-/** 调用模型，返回 assistant 内容。 */
-fun complete(prompt: String, model: String = "default", providerKeyId: Long? = null): String {
-    val body = mutableMapOf<String, Any?>(
-        "model" to model,
-        "provider" to "qwen",  // V1 默认 qwen；后续从 AppModelConfig 取
-        "messages" to listOf(mapOf("role" to "user", "content" to prompt)),
-    )
-    if (providerKeyId != null) body["api_key_id"] = providerKeyId  // Python 侧从 DB 取 Key（更安全）
-    // 或直接传解密后的 api_key（V1 简化）
-    val resp = restClient.post()
-        .uri("/v1/chat/completions")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(body)
-        .retrieve()
-        .body(CompletionResponse::class.java)
-    return resp?.choices?.firstOrNull()?.message?.content ?: ""
+package com.zhijin.app.config
+
+import com.zhijin.app.application.ModelConfigApplicationService
+import com.zhijin.orchestrator.domain.ModelKeyResolver
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+
+/**
+ * ModelKeyResolver 适配 Bean（解决 C1：避免 orchestrator 直接依赖 app）。
+ * 注入 ModelConfigApplicationService.getPlainKey 实现。
+ */
+@Configuration
+class ModelKeyResolverConfig(private val modelConfigService: ModelConfigApplicationService) {
+    @Bean
+    fun modelKeyResolver(): ModelKeyResolver = ModelKeyResolver { tenantId, keyId ->
+        modelConfigService.getPlainKey(tenantId, keyId)
+    }
 }
 ```
-> **安全决策**：V1 简化，Kotlin 解密 Key 后直接传 `api_key` 字段给 Python（不落盘 Python 侧）。Python 不存 Key，每次调用从 Kotlin 接收。后续可改为 Python 通过安全通道从 Kotlin 取 Key（V2）。
 
-- [ ] **Step 4: ChatApplicationService 传 providerKeyId**
+- [ ] **Step 7: 更新测试**
 
-`zhijin-chat/.../application/ChatApplicationService.kt`：
+`HttpModelComponentTest.kt`：
 ```kotlin
-// 从 AppModelConfig 取 providerKeyId（V1 简化：默认 null，用环境变量 Key）
-val providerKeyId: Long? = null  // 后续从 AppModelConfig 取
-val reply = runBlocking { model.complete(req.message, "qwen-max", providerKeyId) }
+@Test
+fun `HttpModelComponent通过ModelKeyResolver解密Key`() = runTest {
+    val aiClient = mock(AiClient::class.java)
+    val keyResolver = mock(ModelKeyResolver::class.java)
+    `when`(keyResolver.resolvePlainKey(0L, 1L)).thenReturn("sk-test")
+    `when`(aiClient.completeWithUsage("prompt", "qwen-max", "qwen", "sk-test"))
+        .thenReturn(ChatCompletionResult("AI回复", Usage(10, 20, 30)))
+    
+    val component = HttpModelComponent(aiClient, keyResolver)
+    val result = component.complete("prompt", "qwen-max", 1L)
+    
+    assertEquals("AI回复", result.content)
+    assertEquals(30, result.usage?.totalTokens)
+}
 ```
 
-- [ ] **Step 5: 构建验证**
+`LlmNodeTest.kt`：
+```kotlin
+@Test
+fun `LlmNode把usage写入outputs`() = runTest {
+    val model = StubModelComponent("AI回复")
+    val node = LlmNode(model)
+    val schema = NodeSchema(...)
+    val result = node.invoke(NodeContext(VariableStore()), schema)
+    
+    assertEquals("AI回复", result.outputs["output"])
+    assertNotNull(result.outputs["usage"])
+    assertEquals(30, (result.outputs["usage"] as Usage).totalTokens)
+}
+```
+
+- [ ] **Step 8: 构建验证**
 
 `cd C:\mypro\JavaProject\zhijin\zhijin-server && mvn -pl zhijin-app -am clean compile`
 Expected: `BUILD SUCCESS`。
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 cd C:\mypro\JavaProject\zhijin
 git add zhijin-server/
-git commit -m "feat(ai-client): HttpModelComponent 从 DB 取 Key 解密下发"
+git commit -m "feat(orchestrator): ModelComponent返回ChatCompletionResult + ModelKeyResolver端口(解决C1/C2/C3)"
 ```
 
 ---
 
-## Task 3: usage_record 回填真实 token 计数
+## Task 3: usage_record 回填真实 token 计数（解决 C2/C6/C7）
 
 **Files:**
-- Modify: `zhijin-server/zhijin-ai-client/src/main/kotlin/com/zhijin/aiclient/AiClient.kt`（解析 usage）
-- Modify: `zhijin-server/zhijin-chat/src/main/kotlin/com/zhijin/chat/application/ChatApplicationService.kt`（回填 usage）
+- Modify: `zhijin-server/zhijin-ai-client/src/main/kotlin/com/zhijin/aiclient/AiClient.kt`（新增 `completeWithUsage` 方法，解析 usage，解决 C7）
+- Modify: `zhijin-server/zhijin-chat/src/main/kotlin/com/zhijin/chat/application/ChatApplicationService.kt`（从执行结果取 usage 回填，解决 C2/C6）
 
-- [ ] **Step 1: AiClient 解析 usage**
+- [ ] **Step 1: AiClient 新增 completeWithUsage 方法（解决 C7）**
 
-`AiClient.kt` 改造返回类型（或新增方法）：
+`zhijin-ai-client/src/main/kotlin/com/zhijin/aiclient/AiClient.kt`：
 ```kotlin
-data class ChatCompletionResult(val content: String, val usage: Usage?)
-data class Usage(val promptTokens: Int, val completionTokens: Int, val totalTokens: Int)
+package com.zhijin.aiclient
 
-fun completeWithUsage(prompt: String, model: String = "default", providerKeyId: Long? = null): ChatCompletionResult {
-    // ... 同 complete，但返回 ChatCompletionResult
-    val resp = ...
-    val usage = resp?.usage?.let { Usage(it.promptTokens, it.completionTokens, it.totalTokens) }
-    return ChatCompletionResult(content = resp?.choices?.firstOrNull()?.message?.content ?: "", usage = usage)
+import com.fasterxml.jackson.annotation.JsonProperty
+import org.springframework.http.MediaType
+import org.springframework.web.client.RestClient
+
+/** Token 使用量（snake_case → camelCase 映射，解决 C7）。 */
+data class Usage(
+    @JsonProperty("prompt_tokens") val promptTokens: Int = 0,
+    @JsonProperty("completion_tokens") val completionTokens: Int = 0,
+    @JsonProperty("total_tokens") val totalTokens: Int = 0,
+)
+
+/** 模型调用结果。 */
+data class ChatCompletionResult(
+    val content: String,
+    val usage: Usage? = null,
+)
+
+/** OpenAI 兼容响应结构。 */
+data class CompletionResponse(
+    val id: String? = null,
+    val choices: List<Choice>? = null,
+    val usage: Usage? = null,  // 新增 usage 字段
+)
+
+data class Choice(val index: Int? = null, val message: Message? = null)
+data class Message(val role: String? = null, val content: String? = null)
+
+class AiClient(private val baseUrl: String = System.getenv("AI_SERVICE_URL") ?: "http://127.0.0.1:8001") {
+
+    private val restClient = RestClient.builder().baseUrl(baseUrl).build()
+
+    /** 调用模型，返回 assistant 内容（向后兼容）。 */
+    fun complete(prompt: String, model: String = "default"): String =
+        completeWithUsage(prompt, model, "qwen", "").content
+
+    /** 调用模型，返回内容 + usage（解决 C7：snake_case 映射）。 */
+    fun completeWithUsage(
+        prompt: String,
+        model: String = "default",
+        provider: String = "qwen",  // 解决 C6：从 AppModelConfig 取
+        apiKey: String = "",
+    ): ChatCompletionResult {
+        val body = mapOf(
+            "model" to model,
+            "provider" to provider,
+            "api_key" to apiKey,  // 解决 C3：传明文，不落盘 Python
+            "messages" to listOf(mapOf("role" to "user", "content" to prompt)),
+        )
+        val resp = restClient.post()
+            .uri("/v1/chat/completions")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(body)
+            .retrieve()
+            .body(CompletionResponse::class.java)
+        val content = resp?.choices?.firstOrNull()?.message?.content ?: ""
+        return ChatCompletionResult(content = content, usage = resp?.usage)
+    }
 }
 ```
 
-- [ ] **Step 2: ChatApplicationService 回填 usage**
+- [ ] **Step 2: ChatApplicationService 从执行结果取 usage 回填（解决 C2/C6）**
 
-`ChatApplicationService.kt`：
+`zhijin-chat/.../application/ChatApplicationService.kt`：
 ```kotlin
-val result = runBlocking { aiClient.completeWithUsage(req.message, "qwen-max", providerKeyId) }
-val reply = result.content
-// 回填 usage_record
+// 从 AppModelConfig 取 provider/model/providerKeyId（解决 C6）
+// V1 简化：默认 qwen/qwen-max/null
+val provider = "qwen"
+val model = "qwen-max"
+val providerKeyId: Long? = null  // 后续从 AppModelConfig 取
+
+// 执行工作流（LlmNode 内部调用 ModelComponent，usage 透传到 NodeResult）
+val result = runBlocking {
+    runner.execute(DefaultWorkflow.build(req.message), VariableStore())
+}
+
+// 从执行结果取 usage（解决 C2）
+val usage = result.outputs["usage"] as? com.zhijin.orchestrator.domain.Usage
 usageRecorder.record(
     UsageRecord(
         tenantId = tenantId, appId = appId, sessionId = session.id,
-        model = "qwen-max",
-        promptTokens = result.usage?.promptTokens ?: 0,
-        completionTokens = result.usage?.completionTokens ?: 0,
-        totalTokens = result.usage?.totalTokens ?: 0,
+        model = model,
+        promptTokens = usage?.promptTokens ?: 0,
+        completionTokens = usage?.completionTokens ?: 0,
+        totalTokens = usage?.totalTokens ?: 0,
         latencyMs = latencyMillis,
     )
 )
 ```
-（需要把 `aiClient` 注入到 `ChatApplicationService`，或扩展 `ModelComponent` 接口返回 `ChatCompletionResult`。）
+
+> **说明**：`DefaultWorkflow.build` 需要把 `provider`/`model`/`providerKeyId` 写入 LLM 节点的 `configs`，这样 `LlmNode` 才能读取并传给 `ModelComponent`。修改 `DefaultWorkflow.kt`：
+```kotlin
+NodeSchema(
+    key = "llm", type = NodeType.LLM,
+    inputs = listOf(FieldInfo("prompt", FieldSource.Literal(prompt))),
+    outputs = listOf(OutputField("output", "string")),
+    configs = mapOf("model" to "qwen-max", "provider" to "qwen", "providerKeyId" to null),
+)
+```
 
 - [ ] **Step 3: 测试 + 验证**
 
@@ -400,7 +623,7 @@ Expected: 全部通过（既有 62 测试 + 新 usage 回填测试）。
 ```bash
 cd C:\mypro\JavaProject\zhijin
 git add zhijin-server/
-git commit -m "feat(chat): usage_record 回填真实 token 计数"
+git commit -m "feat(chat): usage_record 回填真实 token 计数(解决 C2/C6/C7)"
 ```
 
 ---
@@ -442,6 +665,15 @@ git commit -m "docs(plans): 计划 C 追加执行修正记录"
 - **测试覆盖**：每任务编译/测试验证 + Task 4 端到端回归（真实供应商调用 + token 回填）。
 - **占位符扫描**：无 TBD；每步含完整代码。
 - **类型一致性**：`CompletionResult`（Python）↔ `ChatCompletionResult`（Kotlin）字段一致；`usage_record` 字段与 Python 返回的 `usage` 一一对应。
+- **C1-C8 解决方案**：
+  - C1（模块依赖方向）：`ModelKeyResolver` 端口模式，orchestrator 定义接口，app 提供适配 Bean
+  - C2（usage 回填与工作流冲突）：方案 A，`ModelComponent` 返回 `ChatCompletionResult`，`LlmNode` 把 usage 写入 `NodeResult.outputs["usage"]`，`ChatApplicationService` 从执行结果取
+  - C3（api_key vs api_key_id 矛盾）：统一传 `api_key` 明文，Python 不落盘
+  - C4（错误标记）：V1 只落成功记录，`usage_record` 不加 error 列
+  - C5（providerKeyId=null 回退）：Python 适配器回退环境变量（如 `QWEN_API_KEY`）
+  - C6（provider/model 写死）：V1 默认 qwen/qwen-max，注明局限，后续从 `AppModelConfig` 取
+  - C7（snake_case → camelCase）：`Usage` 字段加 `@JsonProperty` 注解
+  - C8（单测）：Python 补适配器 mock 单测，Kotlin 补 `AiClient` usage 解析单测
 
 ## 执行交接
 

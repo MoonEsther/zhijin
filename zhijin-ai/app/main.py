@@ -1,12 +1,12 @@
-"""AI 服务（FastAPI）入口。V1 空壳：仅健康检查，模型网关在计划 C 实现。"""
+"""AI 服务（FastAPI）入口。模型网关走真实供应商适配器（计划 C）。"""
 from fastapi import FastAPI
 
 from .config import load_config
-from .routes import chat as chat_route
+from .gateway.router import router as gateway_router
 
 app = FastAPI(title="zhijin-ai", version="0.1.0")
 
-app.include_router(chat_route.router)
+app.include_router(gateway_router)
 
 config = load_config()
 

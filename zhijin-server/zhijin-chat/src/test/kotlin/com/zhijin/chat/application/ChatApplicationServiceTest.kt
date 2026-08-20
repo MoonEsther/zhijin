@@ -104,6 +104,23 @@ class ChatApplicationServiceTest {
         assertEquals(1L, record.tenantId)
         assertEquals(1L, record.appId)
         assertEquals(1L, record.sessionId)
-        assertEquals("default", record.model)
+        // 解决 C2/N2'：从 VariableStore 回填真实 token 计数（StubModelComponent 固定返回 usage=10/20/30）
+        assertEquals("qwen-max", record.model)
+        assertEquals(10, record.promptTokens)
+        assertEquals(20, record.completionTokens)
+        assertEquals(30, record.totalTokens)
+    }
+
+    @Test
+    fun `默认工作流LLM节点携带模型配置`() {
+        // 解决 C6：provider/model/providerKeyId 写入 LLM 节点 configs，供 LlmNode 读取传给 ModelComponent
+        val schema = DefaultWorkflow.build("你好", provider = "qwen", model = "qwen-max", providerKeyId = 7L)
+        val llm = schema.nodes.first { it.key == "llm" }
+        assertEquals("qwen-max", llm.configs["model"])
+        assertEquals("qwen", llm.configs["provider"])
+        assertEquals(7L, llm.configs["providerKeyId"])
+        // 默认参数向后兼容：无参调用仍可构建（既有测试继续可用）
+        val defaultSchema = DefaultWorkflow.build("你好")
+        assertEquals("qwen-max", defaultSchema.nodes.first { it.key == "llm" }.configs["model"])
     }
 }

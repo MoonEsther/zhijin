@@ -10,6 +10,7 @@ import com.zhijin.orchestrator.domain.VariableStore
 import com.zhijin.orchestrator.domain.executor.NodeExecutorRegistry
 import com.zhijin.orchestrator.domain.ModelComponent
 import com.zhijin.orchestrator.domain.NodeType
+import com.zhijin.orchestrator.domain.Usage
 import com.zhijin.orchestrator.domain.nodes.EndNode
 import com.zhijin.orchestrator.domain.nodes.LlmNode
 import com.zhijin.orchestrator.domain.nodes.StartNode
@@ -69,19 +70,33 @@ class ChatApplicationService(
                 sessionRepository.appendMessage(session.appendMessage("user", req.message))
                 log.info("对话会话创建: tenantId={}, appId={}, sessionId={}", tenantId, appId, session.id)
 
-                val schema = DefaultWorkflow.build(req.message)
+                // 模型配置（解决 C6）：V1 简化写死 qwen/qwen-max；providerKeyId 后续从 AppModelConfig 取
+                val provider = "qwen"
+                val model = "qwen-max"
+                val providerKeyId: Long? = null  // 后续从 AppModelConfig 取
+
+                // 执行工作流：VariableStore 作为局部变量传入（解决 N2'），
+                // LlmNode 调 ModelComponent 后把 usage 透传到 store（key=llm.usage），供执行后取回
+                val store = VariableStore()
                 val startedAt = System.currentTimeMillis()
-                val result = runBlocking { runner.execute(schema, VariableStore()) }
+                val result = runBlocking {
+                    runner.execute(DefaultWorkflow.build(req.message, provider, model, providerKeyId), store)
+                }
                 val reply = result.finalOutput?.toString() ?: ""
                 sessionRepository.appendMessage(session.appendMessage("assistant", reply))
 
-                // 记录用量（V1：模型调用一次 + 工作流执行延迟；token 计数待计划 C 填充）
+                // 记录用量（解决 C2/N2'）：WorkflowResult 无 outputs 字段，
+                // 从 store 取 LlmNode 写入的 usage 回填真实 token 计数；取不到时按 0 处理
+                val usage = store.readNodeOutput("llm", "usage") as? Usage
                 usageRecorder.record(
                     UsageRecord(
                         tenantId = tenantId,
                         appId = appId,
                         sessionId = session.id,
-                        model = "default",
+                        model = model,
+                        promptTokens = usage?.promptTokens ?: 0,
+                        completionTokens = usage?.completionTokens ?: 0,
+                        totalTokens = usage?.totalTokens ?: 0,
                         latencyMs = (System.currentTimeMillis() - startedAt).toInt(),
                     )
                 )

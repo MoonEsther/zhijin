@@ -15,7 +15,18 @@ import com.zhijin.orchestrator.domain.WorkflowSchema
  * （产出的是 orchestrator 领域模型 WorkflowSchema，作为应用服务驱动引擎的输入）。
  */
 object DefaultWorkflow {
-    fun build(prompt: String): WorkflowSchema = WorkflowSchema(
+    /**
+     * 构建默认工作流。
+     * @param provider 供应商（V1 写死 qwen，后续从 AppModelConfig 取，解决 C6）
+     * @param model 模型名（V1 写死 qwen-max，后续从 AppModelConfig 取，解决 C6）
+     * @param providerKeyId 加密 Key 的 ID（V1 为 null，后续从 AppModelConfig 取，解决 C6）
+     */
+    fun build(
+        prompt: String,
+        provider: String = "qwen",
+        model: String = "qwen-max",
+        providerKeyId: Long? = null,
+    ): WorkflowSchema = WorkflowSchema(
         id = "wf-default",
         start = "start",
         nodes = listOf(
@@ -24,6 +35,13 @@ object DefaultWorkflow {
                 key = "llm", type = NodeType.LLM,
                 inputs = listOf(FieldInfo("prompt", FieldSource.Literal(prompt))),
                 outputs = listOf(OutputField("output", "string")),
+                // 模型配置写入 LLM 节点 configs（解决 C6）：LlmNode 读取 model/providerKeyId 传给 ModelComponent；
+                // provider 供后续扩展（当前 HttpModelComponent V1 写死 qwen）。
+                configs = mapOf(
+                    "model" to model,
+                    "provider" to provider,
+                    "providerKeyId" to providerKeyId,
+                ),
             ),
             NodeSchema(
                 key = "end", type = NodeType.END,

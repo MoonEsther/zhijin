@@ -123,14 +123,13 @@ cd zhijin-ai
 uv run uvicorn app.main:app --port 8001
 ```
 
-模型供应商配置从 **`deploy/.env`** 读取（已 gitignore，可放 Key；也可用 `ZHIJIN_ENV_FILE` 指定其他文件，或直接设环境变量，shell 变量优先级最高）。未配置的供应商不会启用：
+模型供应商经 **LangChain 统一接口**调用（`ChatOpenAI` / `ChatAnthropic`），配置收敛为 `PROVIDER` + `BASE_URL` + `API_KEY` 三个变量（从 `deploy/.env` 读取，已 gitignore；请求也可携带 `provider`/`api_key` 覆盖）。`BASE_URL` 留空走该供应商官方默认地址，可改代理/网关：
 
 | 变量 | 说明 |
 |---|---|
-| `CLAUDE_API_KEY` | Anthropic Claude |
-| `OPENAI_API_KEY` + `OPENAI_BASE_URL` | OpenAI 兼容端点（`BASE_URL` 默认官方地址，可改代理） |
-| `QWEN_API_KEY` + `QWEN_BASE_URL` | 通义千问 |
-| `DEEPSEEK_API_KEY` + `DEEPSEEK_BASE_URL` | DeepSeek |
+| `PROVIDER` | 默认供应商：`qwen` / `openai` / `deepseek` / `claude`（默认 qwen） |
+| `BASE_URL` | 模型网关地址（留空走官方默认；qwen/deepseek 等兼容端点可改代理） |
+| `API_KEY` | 模型 API Key |
 | `NACOS_ADDR` / `NACOS_USERNAME` / `NACOS_PASSWORD` | 从 Nacos 拉取配置（可选） |
 | `LOG_LEVEL` | 日志级别（默认 INFO） |
 | `ZHIJIN_ENV_FILE` | 指定 .env 文件路径（默认 `deploy/.env` + cwd 兜底） |

@@ -11,6 +11,9 @@ dependencies = [
     "openai>=3.3.1",
     "anthropic>=0.125.0",
     "python-dotenv>=1.0.0",
+    "langchain-core>=1.6.0",
+    "langchain-openai>=1.6.0",
+    "langchain-anthropic>=1.6.1",
 ]
 
 [dependency-groups]

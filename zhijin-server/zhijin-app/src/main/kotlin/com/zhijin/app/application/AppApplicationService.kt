@@ -39,6 +39,9 @@ class AppApplicationService(
         return saved
     }
 
+    /** 租户全部应用（列表页数据源，不做分页——V1 应用量级小，分页留 V2）。 */
+    fun list(tenantId: Long): List<App> = appRepository.findAll(tenantId)
+
     fun get(tenantId: Long, id: Long): App =
         appRepository.findById(tenantId, id) ?: throw BizException(ResultCode.BAD_REQUEST, "应用不存在")
 

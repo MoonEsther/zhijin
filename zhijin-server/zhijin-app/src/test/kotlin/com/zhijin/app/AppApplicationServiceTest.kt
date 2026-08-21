@@ -65,6 +65,15 @@ class AppApplicationServiceTest {
     }
 
     @Test
+    fun `查询应用列表返回租户全部应用`() {
+        // 模拟仓储返回 2 条（跨租户数据由仓储层 QueryWrapper 过滤，此处只管透传）
+        `when`(appRepository.findAll(1L)).thenReturn(listOf(app(id = 1L), app(id = 2L).copy(name = "第二个")))
+        val list = service.list(1L)
+        assertEquals(2, list.size)
+        assertEquals("第二个", list[1].name)
+    }
+
+    @Test
     fun `创建应用生成appKey并返回草稿`() {
         `when`(appRepository.save(anyApp())).thenAnswer(backfillId())
         val created = service.create(1L, "客服助手", "售前咨询", "")

@@ -25,6 +25,11 @@ class AppController(private val appService: AppApplicationService) {
 
     private val tenantId: Long get() = TenantContextHolder.getRequiredTenantId()
 
+    /** 列表：返回租户下全部应用（前端列表页数据源）。 */
+    @GetMapping
+    fun list(): Result<List<AppResponse>> =
+        Result.success(appService.list(tenantId).map { it.toResponse() })
+
     @PostMapping
     fun create(@Valid @RequestBody req: AppRequest): Result<AppResponse> =
         Result.success(appService.create(tenantId, req.name, req.description, req.iconUri).toResponse())

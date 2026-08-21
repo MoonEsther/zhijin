@@ -2,10 +2,12 @@
 import os
 
 from fastapi import APIRouter, HTTPException
+from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from .adapters.registry import create_chat_model, extract_usage
+from .tools import build_tools
 
 router = APIRouter(prefix="/v1", tags=["chat"])
 
@@ -21,6 +23,10 @@ class ChatRequest(BaseModel):
     provider: str = Field(default="")
     api_key: str = Field(default="")             # Kotlin 下发 Key；为空回退环境变量 API_KEY
     messages: list[ChatMessage] = Field(default_factory=list)
+    # agent 模式：提供 tools 时经 create_agent 绑定工具（模型可调用工具完成任务）；
+    # 空列表则走纯聊天模型调用（向后兼容 Kotlin 现有调用）
+    tools: list[str] = Field(default_factory=list)
+    system_prompt: str = Field(default="")
 
 
 @router.post("/chat/completions")
@@ -33,7 +39,13 @@ async def chat_completions(req: ChatRequest):
             SystemMessage(content=m.content) if m.role == "system" else HumanMessage(content=m.content)
             for m in req.messages
         ]
-        ai = await chat.ainvoke(lc_messages)
+        if req.tools:
+            # agent 模式：create_agent 绑定工具，模型可自主调用；返回最终 AIMessage
+            agent = create_agent(chat, tools=build_tools(req.tools), system_prompt=req.system_prompt or None)
+            result = await agent.ainvoke({"messages": lc_messages})
+            ai = result["messages"][-1]
+        else:
+            ai = await chat.ainvoke(lc_messages)
         content = ai.content if isinstance(ai.content, str) else str(ai.content)
         usage = extract_usage(ai)
         return {

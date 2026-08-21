@@ -134,6 +134,8 @@ uv run uvicorn app.main:app --port 8001
 | `LOG_LEVEL` | 日志级别（默认 INFO） |
 | `ZHIJIN_ENV_FILE` | 指定 .env 文件路径（默认 `deploy/.env` + cwd 兜底） |
 
+网关支持 **agent 模式**：请求带 `tools`（如 `get_current_time`）时经 LangChain `create_agent` 绑定工具运行，模型可自主调用工具完成任务；不带 `tools` 则走纯聊天模型调用。工具在 AI 服务 `app/gateway/tools.py` 注册扩展。
+
 ### 3. 前端控制台（zhijin-web，端口 5173）
 
 ```bash

@@ -80,3 +80,37 @@ async def test_router_maps_langchain_response(monkeypatch):
     assert resp["choices"][0]["message"]["content"] == "hello"
     assert resp["usage"]["total_tokens"] == 3
     assert resp["model"] == "qwen-max"
+
+
+@pytest.mark.asyncio
+async def test_router_agent_mode_binds_tools(monkeypatch):
+    """agent 模式：request 带 tools 时走 create_agent 并绑定工具，返回最终 AI 消息。"""
+    import app.gateway.router as r
+
+    class FakeAI:
+        content = "tool-answer"
+        response_metadata = {"token_usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}
+
+    class FakeAgent:
+        async def ainvoke(self, inputs):
+            assert "messages" in inputs
+            return {"messages": [FakeAI()]}
+
+    captured = {}
+
+    def fake_create_agent(chat, tools=None, **kw):
+        # 记录实际绑定的工具，证明 create_agent 收到的是已解析的 LangChain 工具
+        captured["tools"] = tools
+        return FakeAgent()
+
+    monkeypatch.setattr(r, "create_agent", fake_create_agent)
+
+    resp = await r.chat_completions(
+        r.ChatRequest(
+            provider="qwen", model="qwen-max", api_key="k",
+            messages=[r.ChatMessage(role="user", content="hi")],
+            tools=["get_current_time"], system_prompt="你是助手",
+        )
+    )
+    assert resp["choices"][0]["message"]["content"] == "tool-answer"
+    assert captured["tools"][0].name == "get_current_time"

@@ -172,6 +172,15 @@ export function AppDetailPage() {
   // ---- 发布 tab：调用发布接口，展示返回版本号 ----
   const [publishResult, setPublishResult] = useState<AppVersion | null>(null);
 
+  // 切换应用（/apps/:id 复用同一组件实例）时重置本次会话态：明文 Alert、发布结果、生成弹窗。
+  // 画布用 key={appId} 强制重挂载解决同类问题，这些页面级 state 需手动复位，避免残留上一应用的展示。
+  useEffect(() => {
+    setPlainKey(null);
+    setPublishResult(null);
+    setGenOpen(false);
+    genForm.resetFields();
+  }, [appId]);
+
   const publishMutation = useMutation({
     mutationFn: () => appsApi.publish(appId),
     onSuccess: (version) => {

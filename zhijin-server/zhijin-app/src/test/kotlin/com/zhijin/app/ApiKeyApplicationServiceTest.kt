@@ -109,6 +109,31 @@ class ApiKeyApplicationServiceTest {
         assertEquals("true", annotation.tenantLine)
     }
 
+    @Test
+    fun `list返回key列表且明文置空`() {
+        // 该应用下存在 key（含已吊销 status=0）：列表应返回全部，且 plainKey 一律置空（明文不可恢复）
+        val keys = listOf(
+            AppApiKey(id = 1L, tenantId = 1L, appId = 1L, keyHash = "h1", name = "客户A", status = 1),
+            AppApiKey(id = 2L, tenantId = 1L, appId = 1L, keyHash = "h2", name = "客户B", status = 0),
+        )
+        `when`(repository.findByTenantAndApp(1L, 1L)).thenReturn(keys)
+        val resp = service.list(1L, 1L)
+        assertEquals(2, resp.size)
+        // 核心安全要求：列表响应不带任何明文/哈希
+        assertTrue(resp.all { it.plainKey.isEmpty() })
+        assertEquals(1L, resp[0].id)
+        assertEquals("客户A", resp[0].name)
+        // createTime 透传（领域实体带值则响应带值，供前端列表展示）
+        assertEquals(keys[0].createTime, resp[0].createTime)
+    }
+
+    @Test
+    fun `list跨租户或空结果返回空列表`() {
+        // 仓储按租户+应用过滤后无数据（跨租户或从未生成过 key）：返回空列表而非报错
+        `when`(repository.findByTenantAndApp(2L, 1L)).thenReturn(emptyList())
+        assertTrue(service.list(2L, 1L).isEmpty())
+    }
+
     private fun sha256(s: String): String =
         MessageDigest.getInstance("SHA-256").digest(s.toByteArray())
             .joinToString("") { "%02x".format(it) }

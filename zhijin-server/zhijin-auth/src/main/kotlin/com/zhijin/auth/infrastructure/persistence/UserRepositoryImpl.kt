@@ -30,4 +30,8 @@ class UserRepositoryImpl(private val userMapper: SysUserMapper) : UserRepository
     /** 租户下全部用户：管理端用户列表（RbacController /api/rbac/users）。 */
     override fun listByTenant(tenantId: Long): List<User> =
         userMapper.selectByTenant(tenantId).map { it.toDomain() }
+
+    /** 是否存在归属某组织的用户（删除组织防护用）：显式租户号绕过拦截器，与其它查询同策略。 */
+    override fun existsByOrgId(tenantId: Long, orgId: Long): Boolean =
+        userMapper.countByOrgId(tenantId, orgId) > 0
 }

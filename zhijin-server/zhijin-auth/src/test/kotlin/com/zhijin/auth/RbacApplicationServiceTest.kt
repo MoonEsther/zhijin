@@ -92,6 +92,10 @@ class RbacApplicationServiceTest {
     @Test
     fun `createRole成功保存并透传返回`() {
         `when`(roleRepository.findByCode(1L, "dev")).thenReturn(null)
+        // validatePerms 会先查权限字典确认 permCode 合法
+        `when`(permissionRepository.findAll()).thenReturn(
+            listOf(Permission(id = 1L, permCode = "app:view", permName = "查看应用", parentId = 0L))
+        )
         // 注意：一旦使用 any() 匹配器，所有参数都必须是匹配器（eq/anyLong/anyRole）
         `when`(roleRepository.save(anyLong(), anyRole())).thenAnswer { inv ->
             inv.getArgument<Role>(1).copy(id = 100L)
@@ -102,6 +106,18 @@ class RbacApplicationServiceTest {
         assertEquals(listOf("app:view"), result.perms)
         // 保存时权限点透传到仓储（由仓储落库关联表）
         verify(roleRepository).save(1L, Role(id = null, tenantId = 1L, roleCode = "dev", roleName = "开发者", perms = listOf("app:view")))
+    }
+
+    @Test
+    fun `createRole非法权限点拒绝且不写库`() {
+        `when`(roleRepository.findByCode(1L, "dev")).thenReturn(null)
+        // 权限字典中不存在 "no:perm"，validatePerms 应在写库前抛出
+        `when`(permissionRepository.findAll()).thenReturn(
+            listOf(Permission(id = 1L, permCode = "app:view", permName = "查看应用", parentId = 0L))
+        )
+        assertThrows(BizException::class.java) { service.createRole(1L, "dev", "开发者", listOf("no:perm")) }
+        // 校验失败在写库前，save 不应被调用（配合 @Transactional 双保险）
+        verify(roleRepository, org.mockito.Mockito.never()).save(anyLong(), anyRole())
     }
 
     @Test

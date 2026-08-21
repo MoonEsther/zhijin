@@ -10,6 +10,7 @@ import com.zhijin.auth.interfaces.dto.UserWithRoles
 import com.zhijin.common.exception.BizException
 import com.zhijin.common.web.ResultCode
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 /**
  * RBAC 应用服务（方案 C）：权限点查询、角色 CRUD、用户角色分配、权限合并。
@@ -50,7 +51,8 @@ class RbacApplicationService(
     /** 租户下全部角色（含各自权限点）。 */
     fun listRoles(tenantId: Long): List<Role> = roleRepository.listByTenant(tenantId)
 
-    /** 新建角色：校验编码必填 + 租户内唯一，随后落库并绑定权限点。 */
+    /** 新建角色：校验编码必填 + 租户内唯一 + 权限点合法，随后落库并绑定权限点。 */
+    @Transactional
     fun createRole(tenantId: Long, roleCode: String, roleName: String, perms: List<String>): Role {
         if (roleCode.isBlank() || roleName.isBlank()) {
             throw BizException(ResultCode.BAD_REQUEST, "角色编码与名称不能为空")
@@ -58,12 +60,15 @@ class RbacApplicationService(
         if (roleRepository.findByCode(tenantId, roleCode) != null) {
             throw BizException(ResultCode.BAD_REQUEST, "角色编码已存在: $roleCode")
         }
+        // 权限点合法性提前到写库之前：避免角色行已写入、旧权限已删后才因非法 permCode 抛错
+        validatePerms(perms)
         return roleRepository.save(
             tenantId, Role(id = null, tenantId = tenantId, roleCode = roleCode, roleName = roleName, perms = perms)
         )
     }
 
-    /** 更新角色：校验存在 + 编码唯一（排除自身），重设权限点。 */
+    /** 更新角色：校验存在 + 编码唯一（排除自身）+ 权限点合法，重设权限点。 */
+    @Transactional
     fun updateRole(tenantId: Long, roleId: Long, roleCode: String, roleName: String, perms: List<String>): Role {
         if (roleCode.isBlank() || roleName.isBlank()) {
             throw BizException(ResultCode.BAD_REQUEST, "角色编码与名称不能为空")
@@ -73,12 +78,15 @@ class RbacApplicationService(
         roleRepository.findByCode(tenantId, roleCode)?.let {
             if (it.id != roleId) throw BizException(ResultCode.BAD_REQUEST, "角色编码已存在: $roleCode")
         }
+        // 权限点合法性提前到写库之前（@Transactional 兜底回滚，但前置校验更早失败、语义更清晰）
+        validatePerms(perms)
         return roleRepository.save(
             tenantId, existing.copy(roleCode = roleCode, roleName = roleName, perms = perms)
         )
     }
 
     /** 删除角色（级联清理权限/用户/组织关联）。 */
+    @Transactional
     fun deleteRole(tenantId: Long, roleId: Long) {
         roleRepository.findById(tenantId, roleId)
             ?: throw BizException(ResultCode.BAD_REQUEST, "角色不存在: id=$roleId")
@@ -100,10 +108,23 @@ class RbacApplicationService(
         }
 
     /** 重设用户绑定的角色。 */
+    @Transactional
     fun assignUserRoles(tenantId: Long, userId: Long, roleIds: List<Long>) {
         // 校验用户存在，避免对不存在的用户写入关联
         userRepository.findById(tenantId, userId)
             ?: throw BizException(ResultCode.BAD_REQUEST, "用户不存在: id=$userId")
         roleRepository.assignUserRoles(tenantId, userId, roleIds)
+    }
+
+    /**
+     * 校验权限点编码全部合法（存在于平台权限字典）。
+     * 在写库前调用，保证"角色行更新 + 旧权限删除 + 新权限绑定"不会因非法 permCode 处于半完成状态。
+     */
+    private fun validatePerms(perms: List<String>) {
+        if (perms.isEmpty()) return
+        val existing = permissionRepository.findAll().map { it.permCode }.toSet()
+        perms.forEach { code ->
+            if (code !in existing) throw BizException(ResultCode.BAD_REQUEST, "权限点不存在: $code")
+        }
     }
 }

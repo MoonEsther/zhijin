@@ -160,4 +160,19 @@ class MethodSecurityIntegrationTest {
         mockMvc.perform(get("/api/usage/summary").header("Authorization", "Bearer ${token(listOf("app:create"))}"))
             .andExpect(status().isForbidden())
     }
+
+    @Test
+    fun `带appView权限可访问应用列表`() {
+        // @PreAuthorize("hasAuthority('app:view')")：AppController.list 需 app:view
+        mockMvc.perform(get("/api/apps").header("Authorization", "Bearer ${token(listOf("app:view"))}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.code").value(0))
+    }
+
+    @Test
+    fun `缺appView权限访问应用列表返回403`() {
+        // 仅 usage:view 而无 app:view：访问 /api/apps 应被拒（403）
+        mockMvc.perform(get("/api/apps").header("Authorization", "Bearer ${token(listOf("usage:view"))}"))
+            .andExpect(status().isForbidden())
+    }
 }

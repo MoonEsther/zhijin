@@ -49,4 +49,9 @@ interface SysUserMapper : BaseMapper<SysUserRecord> {
     @InterceptorIgnore(tenantLine = "true")
     @Update("UPDATE sys_user SET org_id = #{orgId}, update_time = now() WHERE tenant_id = #{tenantId} AND id = #{userId}")
     fun updateOrgId(@Param("tenantId") tenantId: Long, @Param("userId") userId: Long, @Param("orgId") orgId: Long)
+
+    /** 统计某组织下归属用户数（删除组织前防护：仍有用户归属时拒绝删除，避免悬挂 org_id 引用）。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT COUNT(*) FROM sys_user WHERE tenant_id = #{tenantId} AND org_id = #{orgId}")
+    fun countByOrgId(@Param("tenantId") tenantId: Long, @Param("orgId") orgId: Long): Long
 }

@@ -16,4 +16,7 @@ interface UserRepository {
 
     /** 租户下全部用户（管理端用户列表）。 */
     fun listByTenant(tenantId: Long): List<User>
+
+    /** 是否存在归属某组织的用户（删除组织前防护，避免悬挂 org_id 引用）。 */
+    fun existsByOrgId(tenantId: Long, orgId: Long): Boolean
 }

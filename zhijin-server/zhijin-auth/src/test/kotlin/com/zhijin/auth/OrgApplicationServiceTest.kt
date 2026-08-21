@@ -4,6 +4,7 @@ import com.zhijin.auth.application.OrgApplicationService
 import com.zhijin.auth.domain.organization.Organization
 import com.zhijin.auth.domain.organization.OrganizationRepository
 import com.zhijin.auth.domain.role.RoleRepository
+import com.zhijin.auth.domain.user.UserRepository
 import com.zhijin.common.exception.BizException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -12,17 +13,19 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
 /**
- * OrgApplicationService 单元测试：模拟组织仓储 + 角色仓储。
- * 覆盖组织树组装、父子组织校验、组织级角色分配前置校验。
+ * OrgApplicationService 单元测试：模拟组织仓储 + 角色仓储 + 用户仓储。
+ * 覆盖组织树组装、父子组织校验、成环防护、删除防护、组织级角色分配前置校验。
  */
 class OrgApplicationServiceTest {
 
     private val orgRepository = mock(OrganizationRepository::class.java)
     private val roleRepository = mock(RoleRepository::class.java)
-    private val service = OrgApplicationService(orgRepository, roleRepository)
+    private val userRepository = mock(UserRepository::class.java)
+    private val service = OrgApplicationService(orgRepository, roleRepository, userRepository)
 
     // Mockito 与 Kotlin 非空参数适配：先注册 any() 匹配，再返回非空占位实例
     private fun anyOrg(): Organization {
@@ -90,9 +93,63 @@ class OrgApplicationServiceTest {
     }
 
     @Test
+    fun `update父组织为自身拒绝`() {
+        // 父组织 == 自身：应被明确拒绝，防止自环
+        `when`(orgRepository.findById(1L, 1L)).thenReturn(org(1, 0, "根组织"))
+        assertThrows(BizException::class.java) { service.update(1L, 1L, 1L, "根组织", 0, 1) }
+    }
+
+    @Test
+    fun `update新父组织在自身子树内拒绝`() {
+        // 组织树：1(根) → 2(研发部)。把 1 的父组织改为 2 会成环（1→2→1）
+        `when`(orgRepository.findById(1L, 1L)).thenReturn(org(1, 0, "根组织"))
+        `when`(orgRepository.findById(1L, 2L)).thenReturn(org(2, 1, "研发部"))
+        `when`(orgRepository.listByTenant(1L)).thenReturn(listOf(org(1, 0, "根组织"), org(2, 1, "研发部")))
+        assertThrows(BizException::class.java) { service.update(1L, 1L, 2L, "根组织", 0, 1) }
+    }
+
+    @Test
+    fun `update合法移动父组织成功`() {
+        // 组织树：1(根), 3(团队)。把 3 的父组织改为 1（合法移动，不成环）
+        `when`(orgRepository.findById(1L, 3L)).thenReturn(org(3, 0, "团队"))
+        `when`(orgRepository.findById(1L, 1L)).thenReturn(org(1, 0, "根组织"))
+        `when`(orgRepository.listByTenant(1L)).thenReturn(listOf(org(1, 0, "根组织"), org(3, 0, "团队")))
+        `when`(orgRepository.save(anyLong(), anyOrg())).thenAnswer { inv -> inv.getArgument<Organization>(1) }
+        val updated = service.update(1L, 3L, 1L, "团队", 0, 1)
+        assertEquals(1L, updated.parentId)
+    }
+
+    @Test
     fun `delete组织不存在抛业务异常`() {
         `when`(orgRepository.findById(1L, 99L)).thenReturn(null)
         assertThrows(BizException::class.java) { service.delete(1L, 99L) }
+    }
+
+    @Test
+    fun `delete有子组织拒绝`() {
+        // 组织树：1(根) → 2(研发部)。删除 1 会令子组织 2 的 parent_id 悬空 → 拒绝
+        `when`(orgRepository.findById(1L, 1L)).thenReturn(org(1, 0, "根组织"))
+        `when`(orgRepository.listByTenant(1L)).thenReturn(listOf(org(1, 0, "根组织"), org(2, 1, "研发部")))
+        assertThrows(BizException::class.java) { service.delete(1L, 1L) }
+        verify(orgRepository, never()).deleteById(anyLong(), anyLong())
+    }
+
+    @Test
+    fun `delete仍有用户归属拒绝`() {
+        `when`(orgRepository.findById(1L, 2L)).thenReturn(org(2, 1, "研发部"))
+        `when`(orgRepository.listByTenant(1L)).thenReturn(listOf(org(1, 0, "根组织"), org(2, 1, "研发部")))
+        `when`(userRepository.existsByOrgId(1L, 2L)).thenReturn(true)
+        assertThrows(BizException::class.java) { service.delete(1L, 2L) }
+        verify(orgRepository, never()).deleteById(anyLong(), anyLong())
+    }
+
+    @Test
+    fun `delete无子组织无用户时成功`() {
+        `when`(orgRepository.findById(1L, 2L)).thenReturn(org(2, 1, "研发部"))
+        `when`(orgRepository.listByTenant(1L)).thenReturn(listOf(org(1, 0, "根组织"), org(2, 1, "研发部")))
+        `when`(userRepository.existsByOrgId(1L, 2L)).thenReturn(false)
+        service.delete(1L, 2L)
+        verify(orgRepository).deleteById(1L, 2L)
     }
 
     @Test

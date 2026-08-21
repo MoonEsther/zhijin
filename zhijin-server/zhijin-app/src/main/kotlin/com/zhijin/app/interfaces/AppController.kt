@@ -28,6 +28,7 @@ class AppController(private val appService: AppApplicationService) {
 
     /** 列表：返回租户下全部应用（前端列表页数据源）。 */
     @GetMapping
+    @PreAuthorize("hasAuthority('app:view')")
     fun list(): Result<List<AppResponse>> =
         Result.success(appService.list(tenantId).map { it.toResponse() })
 
@@ -37,6 +38,7 @@ class AppController(private val appService: AppApplicationService) {
         Result.success(appService.create(tenantId, req.name, req.description, req.iconUri).toResponse())
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('app:view')")
     fun get(@PathVariable id: Long): Result<AppResponse> =
         Result.success(appService.get(tenantId, id).toResponse())
 

@@ -54,6 +54,9 @@ export function AppDetailPage() {
   const appId = Number(idParam); // 路由 /apps/:id，id 必填；Number 兜底 NaN 不会命中接口
   const queryClient = useQueryClient();
   const canvasRef = useRef<FlowCanvasHandle>(null);
+  // 陈旧闭包守卫：始终指向最近一次渲染的 appId，供 useMutation 的 onSuccess 判断请求返回时是否已切走应用
+  const appIdRef = useRef(appId);
+  appIdRef.current = appId;
 
   // 应用基本信息（头部展示名称/状态；发布成功后 invalidate 刷新状态标签）
   const { data: app } = useQuery({
@@ -130,8 +133,11 @@ export function AppDetailPage() {
   const generateMutation = useMutation({
     mutationFn: (name: string) => appsApi.generateApiKey(appId, name),
     onSuccess: (key) => {
-      setPlainKey(key.plainKey); // 明文仅本次生成响应返回，故只在页面上显示一次
       queryClient.invalidateQueries({ queryKey: ['api-keys', appId] });
+      // 陈旧闭包守卫：请求发出后若已切到其他应用（/apps/:id 复用组件实例），丢弃展示态，
+      // 避免 app1 的明文 Key 泄漏显示在 app2 页面；invalidate 保留（按 queryKey 精确刷新，无副作用）
+      if (appIdRef.current !== appId) return;
+      setPlainKey(key.plainKey); // 明文仅本次生成响应返回，故只在页面上显示一次
       setGenOpen(false);
       genForm.resetFields();
       message.success('API Key 已生成');
@@ -184,8 +190,10 @@ export function AppDetailPage() {
   const publishMutation = useMutation({
     mutationFn: () => appsApi.publish(appId),
     onSuccess: (version) => {
-      setPublishResult(version);
       queryClient.invalidateQueries({ queryKey: ['app', appId] }); // 刷新头部状态标签
+      // 陈旧闭包守卫：已切走应用则不展示发布结果，避免 app1 的发布成功提示残留到 app2 页面
+      if (appIdRef.current !== appId) return;
+      setPublishResult(version);
       message.success(`发布成功，版本号：v${version.versionNo}`);
     },
     onError: (e: Error) => message.error(e.message || '发布失败'),

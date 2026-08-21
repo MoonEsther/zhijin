@@ -17,9 +17,12 @@ import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
 import java.security.MessageDigest
+import java.time.LocalDateTime
 
 /**
  * ApiKeyApplicationService 单元测试：模拟 ApiKeyRepository。
@@ -112,8 +115,9 @@ class ApiKeyApplicationServiceTest {
     @Test
     fun `list返回key列表且明文置空`() {
         // 该应用下存在 key（含已吊销 status=0）：列表应返回全部，且 plainKey 一律置空（明文不可恢复）
+        val createTime = LocalDateTime.of(2026, 8, 21, 10, 30)
         val keys = listOf(
-            AppApiKey(id = 1L, tenantId = 1L, appId = 1L, keyHash = "h1", name = "客户A", status = 1),
+            AppApiKey(id = 1L, tenantId = 1L, appId = 1L, keyHash = "h1", name = "客户A", status = 1, createTime = createTime),
             AppApiKey(id = 2L, tenantId = 1L, appId = 1L, keyHash = "h2", name = "客户B", status = 0),
         )
         `when`(repository.findByTenantAndApp(1L, 1L)).thenReturn(keys)
@@ -124,7 +128,7 @@ class ApiKeyApplicationServiceTest {
         assertEquals(1L, resp[0].id)
         assertEquals("客户A", resp[0].name)
         // createTime 透传（领域实体带值则响应带值，供前端列表展示）
-        assertEquals(keys[0].createTime, resp[0].createTime)
+        assertEquals(createTime, resp[0].createTime)
     }
 
     @Test
@@ -132,6 +136,16 @@ class ApiKeyApplicationServiceTest {
         // 仓储按租户+应用过滤后无数据（跨租户或从未生成过 key）：返回空列表而非报错
         `when`(repository.findByTenantAndApp(2L, 1L)).thenReturn(emptyList())
         assertTrue(service.list(2L, 1L).isEmpty())
+    }
+
+    @Test
+    fun `revoke跨应用keyId静默跳过`() {
+        // 同租户但路径 appId 不匹配（如 /apps/1/api-keys 传入 app2 的 keyId）：视为不存在，不保存、幂等返回
+        val otherAppKey = AppApiKey(id = 99L, tenantId = 1L, appId = 2L, keyHash = "h", name = "客户B", status = 1)
+        `when`(repository.findById(1L, 99L)).thenReturn(otherAppKey)
+        service.revoke(1L, 1L, 99L)
+        // 不应触发 save（未吊销），防止跨应用误吊销
+        verify(repository, never()).save(anyApiKey())
     }
 
     private fun sha256(s: String): String =

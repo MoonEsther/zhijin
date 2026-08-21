@@ -40,10 +40,12 @@ class ApiKeyApplicationService(
         return ApiKeyResponse(id = key.id!!, plainKey = plain, name = name)
     }
 
-    /** 吊销 API Key：置 status=0；keyId 不存在或租户不匹配时静默跳过（幂等）。 */
+    /** 吊销 API Key：置 status=0；keyId 不存在、租户不匹配或不属于该应用时静默跳过（幂等）。 */
     @Transactional
     fun revoke(tenantId: Long, appId: Long, keyId: Long) {
         val key = apiKeyRepository.findById(tenantId, keyId) ?: return
+        // 应用级隔离：keyId 属于同租户其他应用时视为不存在，防止跨应用吊销（与 list 的应用维度隔离一致）
+        if (key.appId != appId) return
         apiKeyRepository.save(key.revoked())
         // 记录审计（P8：username 暂取不到用户信息，传空串）
         auditRecorder.record(

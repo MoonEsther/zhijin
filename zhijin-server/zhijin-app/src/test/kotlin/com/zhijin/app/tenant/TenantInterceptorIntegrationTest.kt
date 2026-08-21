@@ -27,8 +27,10 @@ class TenantInterceptorIntegrationTest {
 
     @Test
     fun `插入自动填充租户, 查询按租户隔离`() {
+        // 注意：role_code 不能用 "admin" —— AdminSeeder 已为租户1播种 admin 角色，
+        // 会撞 uk_sys_role_tenant_code 唯一索引；改用 viewer 保持"插入+隔离"断言意图不变。
         TenantContextHolder.setTenantId(1L)
-        val role = SysRole(roleCode = "admin", roleName = "管理员")
+        val role = SysRole(roleCode = "viewer", roleName = "只读")
         roleMapper.insert(role)
         assertTrue(role.id != null)
         assertEquals(1L, role.tenantId)
@@ -36,7 +38,7 @@ class TenantInterceptorIntegrationTest {
         // 租户2 查不到租户1的数据（SQL 层自动加 WHERE tenant_id = 2）
         TenantContextHolder.setTenantId(2L)
         val list = roleMapper.selectList(
-            QueryWrapper<SysRole>().eq("role_code", "admin")
+            QueryWrapper<SysRole>().eq("role_code", "viewer")
         )
         assertTrue(list.isEmpty())
     }

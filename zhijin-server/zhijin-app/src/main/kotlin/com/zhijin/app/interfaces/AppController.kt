@@ -9,6 +9,7 @@ import com.zhijin.app.interfaces.dto.AppVersionResponse
 import com.zhijin.common.web.Result
 import com.zhijin.framework.tenant.TenantContextHolder
 import jakarta.validation.Valid
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -31,6 +32,7 @@ class AppController(private val appService: AppApplicationService) {
         Result.success(appService.list(tenantId).map { it.toResponse() })
 
     @PostMapping
+    @PreAuthorize("hasAuthority('app:create')")
     fun create(@Valid @RequestBody req: AppRequest): Result<AppResponse> =
         Result.success(appService.create(tenantId, req.name, req.description, req.iconUri).toResponse())
 
@@ -39,10 +41,12 @@ class AppController(private val appService: AppApplicationService) {
         Result.success(appService.get(tenantId, id).toResponse())
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('app:update')")
     fun update(@PathVariable id: Long, @Valid @RequestBody req: AppRequest): Result<AppResponse> =
         Result.success(appService.update(tenantId, id, req.name, req.description, req.iconUri).toResponse())
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('app:delete')")
     fun delete(@PathVariable id: Long): Result<Unit> {
         appService.delete(tenantId, id)
         return Result.success()
@@ -50,6 +54,7 @@ class AppController(private val appService: AppApplicationService) {
 
     /** 发布：返回新版本快照（版本号自增）。 */
     @PostMapping("/{id}/publish")
+    @PreAuthorize("hasAuthority('app:publish')")
     fun publish(@PathVariable id: Long): Result<AppVersionResponse> =
         Result.success(appService.publish(tenantId, id).toVersionResponse())
 

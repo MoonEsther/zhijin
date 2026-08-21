@@ -24,6 +24,8 @@ data class SysUserRecord(
     var password: String = "",
     var nickname: String = "",
     var status: Int = 1,
+    // V6 组织模型：用户归属组织（可空，用户可不属于任何组织）
+    var orgId: Long? = null,
     @TableField(fill = FieldFill.INSERT)
     var createTime: LocalDateTime? = null,
     @TableField(fill = FieldFill.INSERT_UPDATE)
@@ -37,6 +39,7 @@ data class SysUserRecord(
         password = password,
         nickname = nickname,
         status = status,
+        orgId = orgId,
     )
 
     companion object {
@@ -48,6 +51,7 @@ data class SysUserRecord(
             password = user.password,
             nickname = user.nickname,
             status = user.status,
+            orgId = user.orgId,
         )
     }
 }

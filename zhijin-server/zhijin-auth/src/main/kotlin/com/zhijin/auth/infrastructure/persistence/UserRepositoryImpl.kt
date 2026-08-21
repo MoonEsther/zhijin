@@ -19,4 +19,15 @@ class UserRepositoryImpl(private val userMapper: SysUserMapper) : UserRepository
      */
     override fun findByUsername(username: String): User? =
         userMapper.findByUsername(username)?.toDomain()
+
+    /**
+     * 按租户 + 用户 ID 查找：同样绕过租户拦截器、显式传租户号，
+     * 因为权限合并（getPerms 取 orgId）可能在 token 签发等无租户上下文场景触发。
+     */
+    override fun findById(tenantId: Long, userId: Long): User? =
+        userMapper.findById(tenantId, userId)?.toDomain()
+
+    /** 租户下全部用户：管理端用户列表（RbacController /api/rbac/users）。 */
+    override fun listByTenant(tenantId: Long): List<User> =
+        userMapper.selectByTenant(tenantId).map { it.toDomain() }
 }

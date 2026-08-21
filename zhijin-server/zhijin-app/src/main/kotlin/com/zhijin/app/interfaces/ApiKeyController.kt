@@ -4,6 +4,7 @@ import com.zhijin.app.application.ApiKeyApplicationService
 import com.zhijin.app.interfaces.dto.ApiKeyResponse
 import com.zhijin.common.web.Result
 import com.zhijin.framework.tenant.TenantContextHolder
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -22,6 +23,7 @@ class ApiKeyController(private val apiKeyService: ApiKeyApplicationService) {
 
     /** 生成 API Key：明文仅在此响应中返回一次。 */
     @PostMapping("/{id}/api-keys")
+    @PreAuthorize("hasAuthority('apikey:manage')")
     fun generate(@PathVariable id: Long, @RequestParam(name = "name", defaultValue = "") name: String): Result<ApiKeyResponse> =
         Result.success(apiKeyService.generate(tenantId, id, name))
 
@@ -32,6 +34,7 @@ class ApiKeyController(private val apiKeyService: ApiKeyApplicationService) {
 
     /** 吊销 API Key：幂等，keyId 不存在或非本租户时静默成功。 */
     @DeleteMapping("/{id}/api-keys/{keyId}")
+    @PreAuthorize("hasAuthority('apikey:manage')")
     fun revoke(@PathVariable id: Long, @PathVariable keyId: Long): Result<Unit> {
         apiKeyService.revoke(tenantId, id, keyId)
         return Result.success()

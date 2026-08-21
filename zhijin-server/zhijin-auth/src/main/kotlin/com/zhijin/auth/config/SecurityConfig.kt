@@ -2,6 +2,7 @@ package com.zhijin.auth.config
 
 import com.nimbusds.jose.jwk.source.JWKSource
 import com.nimbusds.jose.proc.SecurityContext
+import com.zhijin.auth.application.RbacApplicationService
 import com.zhijin.auth.entity.ZhijinUserDetails
 import com.zhijin.auth.web.JwtTenantFilter
 import org.springframework.beans.factory.annotation.Value
@@ -22,6 +23,8 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint
 import org.springframework.security.oauth2.server.resource.web.access.BearerTokenAccessDeniedHandler
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter
@@ -89,6 +92,8 @@ class SecurityConfig {
                 oauth2.jwt { jwt ->
                     // 用与授权服务器同一 JWKSource 构造 JWT 解码器，保证签名校验一致
                     jwt.decoder(OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource))
+                    // 挂载自定义转换器：@PreAuthorize 依赖它把 perms claim 解析为无前缀 authority
+                    jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())
                 }
             }
             .exceptionHandling { ex ->
@@ -120,18 +125,38 @@ class SecurityConfig {
             .issuer("http://$issuerHostPort")
             .build()
 
-    // ---------- OAuth2 Token 定制器：把租户 ID + 角色写入 JWT claims ----------
-    // 仅对授权码流程（principal 为 UsernamePasswordAuthenticationToken）生效；
-    // client_credentials M2M 的 principal 是客户端认证，被 if 分支过滤，不写入租户/角色。
+    // ---------- JWT 权限解析器：把 perms claim 转成 Spring Security authorities ----------
+    // 关键：Spring Security 默认的 JwtAuthenticationConverter 只从 scope claim 解析且带 SCOPE_ 前缀，
+    // 无法满足 @PreAuthorize("hasAuthority('app:create')") 的无前缀权限点匹配。
+    // 这里把解析源改为 perms claim 且前缀置空，权限点编码（如 app:create）直接成为 authority。
     @Bean
-    fun tokenCustomizer(): OAuth2TokenCustomizer<JwtEncodingContext> =
+    fun jwtAuthenticationConverter(): JwtAuthenticationConverter =
+        JwtAuthenticationConverter().apply {
+            setJwtGrantedAuthoritiesConverter(
+                JwtGrantedAuthoritiesConverter().apply {
+                    setAuthoritiesClaimName("perms")
+                    setAuthorityPrefix("")
+                }
+            )
+        }
+
+    // ---------- OAuth2 Token 定制器：把租户 ID + 角色 + 权限点写入 JWT claims ----------
+    // 仅对授权码流程（principal 为 UsernamePasswordAuthenticationToken）生效；
+    // client_credentials M2M 的 principal 是客户端认证，被 if 分支过滤，不写入租户/角色/权限。
+    // perms 在签发令牌时经 RbacApplicationService 实时查询（用户角色 ∪ 组织角色），
+    // 保证角色变更在令牌签发时刻即时生效；底层仓储显式传租户号并绕过租户拦截器，
+    // 因为 OAuth2 签发链路不经过资源服务器链，TenantContextHolder 无租户上下文。
+    @Bean
+    fun tokenCustomizer(rbacService: RbacApplicationService): OAuth2TokenCustomizer<JwtEncodingContext> =
         OAuth2TokenCustomizer { context ->
             val principal = context.getPrincipal<Authentication>()
             if (principal is UsernamePasswordAuthenticationToken && principal.principal is ZhijinUserDetails) {
                 val user = principal.principal as ZhijinUserDetails
+                val perms = rbacService.getPerms(user.tenantId, user.id)
                 context.claims.claims { claims ->
                     claims["tenant_id"] = user.tenantId
                     claims["roles"] = user.authorities.map { it.authority }
+                    claims["perms"] = perms
                 }
             }
         }

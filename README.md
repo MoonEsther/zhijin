@@ -123,16 +123,17 @@ cd zhijin-ai
 uv run uvicorn app.main:app --port 8001
 ```
 
-模型供应商通过环境变量配置（未配置的供应商不会启用）：
+模型供应商配置从 **`deploy/.env`** 读取（已 gitignore，可放 Key；也可用 `ZHIJIN_ENV_FILE` 指定其他文件，或直接设环境变量，shell 变量优先级最高）。未配置的供应商不会启用：
 
 | 变量 | 说明 |
 |---|---|
 | `CLAUDE_API_KEY` | Anthropic Claude |
-| `OPENAI_BASE_URL`（+ `OPENAI_API_KEY`） | OpenAI 兼容端点 |
-| `QWEN_BASE_URL` | 通义千问 |
-| `DEEPSEEK_BASE_URL` | DeepSeek |
+| `OPENAI_API_KEY` + `OPENAI_BASE_URL` | OpenAI 兼容端点（`BASE_URL` 默认官方地址，可改代理） |
+| `QWEN_API_KEY` + `QWEN_BASE_URL` | 通义千问 |
+| `DEEPSEEK_API_KEY` + `DEEPSEEK_BASE_URL` | DeepSeek |
 | `NACOS_ADDR` / `NACOS_USERNAME` / `NACOS_PASSWORD` | 从 Nacos 拉取配置（可选） |
 | `LOG_LEVEL` | 日志级别（默认 INFO） |
+| `ZHIJIN_ENV_FILE` | 指定 .env 文件路径（默认 `deploy/.env` + cwd 兜底） |
 
 ### 3. 前端控制台（zhijin-web，端口 5173）
 

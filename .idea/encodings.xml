@@ -1,4 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="Encoding" defaultCharsetForPropertiesFiles="UTF-8" />
+  <component name="Encoding" defaultCharsetForPropertiesFiles="UTF-8">
+    <file url="file://$PROJECT_DIR$/zhijin-server/src/main/kotlin" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-ai-client/src/main/kotlin" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-ai-client/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-app/src/main/kotlin" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-app/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-auth/src/main/kotlin" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-auth/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-billing-audit/src/main/kotlin" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-billing-audit/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-chat/src/main/kotlin" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-chat/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-common/src/main/kotlin" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-common/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-framework/src/main/kotlin" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-framework/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-orchestrator/src/main/kotlin" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-orchestrator/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-tool/src/main/kotlin" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/zhijin-server/zhijin-tool/src/main/resources" charset="UTF-8" />
+  </component>
 </project>

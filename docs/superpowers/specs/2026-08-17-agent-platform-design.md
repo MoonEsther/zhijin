@@ -400,6 +400,10 @@ zhijin-ai/
 ### 9.1 多租户设计
 
 - **隔离模型**：共享库 + `tenant_id` 行级隔离（逻辑隔离）。所有业务表带 `tenant_id`，查询由 ORM 拦截器**自动注入 `WHERE tenant_id = ?`**。
+- **租户 → 组织树 → 用户（组织概念，2026-08-21 补充）**：
+  - 租户（tenant）下建**组织树**（`sys_organization`：parent_id 层级，部门/团队），用户归属于组织（`sys_user.org_id`）。
+  - **组织级角色授权**：角色可分配给组织（`sys_org_role`），组织内用户**继承**组织角色权限；用户实际权限 = 用户角色 ∪ 组织角色（合并去重）。
+  - V1 后端模型 + 接口 + 授权继承；前端组织管理页 V2。
 - **租户识别**：
   - 管理端：登录用户的 JWT 内携带租户信息；
   - 客户系统：调用开放 API 用 API Key，Key 与租户绑定。
@@ -521,6 +525,7 @@ zhijin-ai/
 | 26 | 前端使用 **TypeScript**（全程 strict 模式），React + TS + antd；不使用 JS |
 | 27 | Python 依赖管理使用 **uv**（pyproject.toml + uv.lock + `uv sync` / `uv run`） |
 | 28 | 部署边界：**全部中间件（PostgreSQL / Redis / Elasticsearch / Nacos / MinIO）由既有基础设施提供**（不纳入 docker-compose），服务经环境变量/Nacos 连接；docker-compose 仅编排平台两个服务 |
+| 29 | **组织概念**：租户 → 组织树 → 用户（`sys_organization` 层级 + `sys_user.org_id`）；组织级角色授权（`sys_org_role`），用户实际权限 = 用户角色 ∪ 组织角色（2026-08-21 补充） |
 
 ## 14. 开放问题 ✅ 已全部确认
 

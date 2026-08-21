@@ -1,15 +1,14 @@
-"""LangChain 模型供应商注册：统一 base_url + api_key + model 构造（抽象由 LangChain 承担）。
+"""LangChain 模型供应商注册：init_chat_model 统一初始化（base_url + api_key 统一配置面）。
 
 设计：不按供应商拆配置变量，整个 AI 服务只有一个统一的 `BASE_URL` + `API_KEY`
-（加上选择供应商的 `PROVIDER`）。provider 决定用哪个 LangChain 集成：
-OpenAI 兼容三家（qwen/openai/deepseek）→ ChatOpenAI，claude → ChatAnthropic。
-后续 RAG / Agent 等能力直接复用 LangChain 生态。
+（加上选择供应商的 `PROVIDER`）。供应商经 init_chat_model 的 model_provider 分派：
+qwen/deepseek 走 OpenAI 兼容协议（ChatOpenAI），openai 原生，claude 用 Anthropic 集成。
+后续 RAG / Agent / 工具调用等能力直接复用 LangChain 生态。
 """
 import os
 
-from langchain_anthropic import ChatAnthropic
+from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_openai import ChatOpenAI
 
 # 各供应商官方默认 base_url（仅当未配置 BASE_URL 时兜底，避免每家一个变量）
 DEFAULT_BASE_URLS = {
@@ -19,7 +18,13 @@ DEFAULT_BASE_URLS = {
     "claude": "https://api.anthropic.com",
 }
 
-_OPENAI_COMPATIBLE = ("qwen", "openai", "deepseek")
+# 供应商 → init_chat_model 的 model_provider（qwen/deepseek 为 OpenAI 兼容协议）
+_PROVIDER_MAP = {
+    "qwen": "openai",
+    "openai": "openai",
+    "deepseek": "openai",
+    "claude": "anthropic",
+}
 
 
 def create_chat_model(
@@ -28,21 +33,28 @@ def create_chat_model(
     base_url: str = "",
     api_key: str = "",
     model: str = "default",
+    **kwargs,
 ) -> BaseChatModel:
-    """按供应商构造 LangChain 聊天模型（统一入参：base_url / api_key / model）。
+    """统一初始化 LangChain 聊天模型（经 init_chat_model 分派集成）。
 
     配置优先级：显式参数 > 环境变量（BASE_URL / API_KEY）> 供应商官方默认地址。
     api_key 为空（请求未下发且环境变量未设）时报错，避免静默打到无 Key 的网关。
+    kwargs 透传给底层模型（如 http_client、extra_body 的 thinking 参数）。
     """
     key = api_key or os.getenv("API_KEY", "")
     if not key:
         raise ValueError("未提供 API Key（请求 api_key 或环境变量 API_KEY 未设置）")
+    model_provider = _PROVIDER_MAP.get(provider)
+    if not model_provider:
+        raise ValueError(f"不支持的供应商: {provider}")
     url = base_url or os.getenv("BASE_URL", "") or DEFAULT_BASE_URLS.get(provider, "")
-    if provider in _OPENAI_COMPATIBLE:
-        return ChatOpenAI(model=model, base_url=url, api_key=key)
-    if provider == "claude":
-        return ChatAnthropic(model=model, base_url=url, api_key=key, max_tokens=4096)
-    raise ValueError(f"不支持的供应商: {provider}")
+    return init_chat_model(
+        model=model,
+        model_provider=model_provider,
+        base_url=url,
+        api_key=key,
+        **kwargs,
+    )
 
 
 def extract_usage(ai) -> dict:

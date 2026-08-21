@@ -29,6 +29,7 @@ class ApiKeyController(private val apiKeyService: ApiKeyApplicationService) {
 
     /** 列表：返回该应用下全部 API Key（不含明文，仅 id/name/createTime）。 */
     @GetMapping("/{id}/api-keys")
+    @PreAuthorize("hasAuthority('app:view')")
     fun list(@PathVariable id: Long): Result<List<ApiKeyResponse>> =
         Result.success(apiKeyService.list(tenantId, id))
 

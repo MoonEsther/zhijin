@@ -177,6 +177,21 @@ class MethodSecurityIntegrationTest {
     }
 
     @Test
+    fun `带appView权限可读APIKey列表`() {
+        // @PreAuthorize("hasAuthority('app:view')")：能看应用详情即可读 key 元数据（id/name/createTime，不含明文/哈希）
+        mockMvc.perform(get("/api/apps/1/api-keys").header("Authorization", "Bearer ${token(listOf("app:view"))}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.code").value(0))
+    }
+
+    @Test
+    fun `缺appView权限读APIKey列表返回403`() {
+        // 仅 usage:view 而无 app:view：读 key 列表应被拒（403）；生成/吊销仍由 apikey:manage 管住
+        mockMvc.perform(get("/api/apps/1/api-keys").header("Authorization", "Bearer ${token(listOf("usage:view"))}"))
+            .andExpect(status().isForbidden())
+    }
+
+    @Test
     fun `userManage权限可读用户列表且返回角色名`() {
         // 仅 user:manage（无 role:manage）：GET /api/rbac/users 应放行，
         // 且响应内嵌 roleNames，前端「当前角色」列不再依赖独立 roles 查询

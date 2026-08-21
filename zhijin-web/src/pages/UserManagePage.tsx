@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Checkbox, Form, Modal, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -25,8 +25,18 @@ export function UserManagePage() {
     queryFn: rbacApi.users,
     enabled: hasPerm,
   });
-  // 角色列表作为分配弹窗的选项（与角色管理页共用 ['roles'] 缓存）
-  const { data: roles = [] } = useQuery({ queryKey: ['roles'], queryFn: rbacApi.roles, enabled: hasPerm });
+  // 角色列表作为分配弹窗的选项（与角色管理页共用 ['roles'] 缓存；
+  // 后端 GET /api/rbac/roles 已放宽为 user:manage 或 role:manage 可读）
+  const { data: roles = [], isError: rolesError } = useQuery({
+    queryKey: ['roles'],
+    queryFn: rbacApi.roles,
+    enabled: hasPerm,
+  });
+
+  // roles 查询失败（网络/后端异常）时提示，避免分配弹窗选项静默为空
+  useEffect(() => {
+    if (rolesError) message.error('角色列表加载失败，分配角色弹窗选项可能为空');
+  }, [rolesError]);
 
   // 分配角色：全量覆盖用户绑定的角色
   const assignMutation = useMutation({
@@ -46,13 +56,8 @@ export function UserManagePage() {
     setAssigning(record);
   };
 
-  // 用户当前角色列：roleIds → 角色名（未命中的角色 ID 忽略）
-  const roleNameOf = (roleIds: number[]) =>
-    roleIds
-      .map((id) => roles.find((r) => r.id === id)?.roleName)
-      .filter((name): name is string => Boolean(name))
-      .join('、');
-
+  // 用户当前角色列：直接渲染后端内嵌的 roleNames（不再依赖独立 roles 查询，
+  // 使仅有 user:manage 无 role:manage 的管理员也能看到用户角色）
   const columns: ColumnsType<RbacUser> = [
     { title: '用户名', dataIndex: 'username', width: 160 },
     { title: '昵称', dataIndex: 'nickname', width: 160 },
@@ -63,7 +68,7 @@ export function UserManagePage() {
       // 与后端 User.status 语义一致：1=启用，其余视为禁用
       render: (status: number) => (status === 1 ? <Tag color="success">启用</Tag> : <Tag>禁用</Tag>),
     },
-    { title: '当前角色', dataIndex: 'roleIds', render: (roleIds: number[]) => roleNameOf(roleIds) || '-' },
+    { title: '当前角色', dataIndex: 'roleNames', render: (roleNames: string[]) => roleNames.join('、') || '-' },
     {
       title: '操作',
       key: 'action',

@@ -37,9 +37,13 @@ class RbacController(private val rbacService: RbacApplicationService) {
     fun permissions(): Result<List<PermissionResponse>> =
         Result.success(rbacService.listPermissions().map { PermissionResponse.toResponse(it) })
 
-    /** 角色列表（含权限点）。 */
+    /**
+     * 角色列表（含权限点）：user:manage 与 role:manage 均可读——
+     * 用户管理「分配角色」弹窗需要角色作为选项，仅有 user:manage 的管理员也应能读取。
+     * 角色 CRUD（POST/PUT/DELETE）仍保持 role:manage 专属。
+     */
     @GetMapping("/roles")
-    @PreAuthorize("hasAuthority('role:manage')")
+    @PreAuthorize("hasAnyAuthority('user:manage', 'role:manage')")
     fun roles(): Result<List<RoleResponse>> =
         Result.success(rbacService.listRoles(tenantId).map { RoleResponse.toResponse(it) })
 

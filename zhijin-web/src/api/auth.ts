@@ -1,13 +1,5 @@
 import { tokenStore } from '../auth/tokenStore';
-
-// /auth/validate 返回的用户身份（与后端 ValidateResponse 字段一一对应）
-export interface UserInfo {
-  username: string;
-  userId: number | null;
-  tenantId: number | null;
-  roles: string[];
-  perms: string[];
-}
+import type { UserInfo } from '../auth/userStore';
 
 /**
  * 拉取当前用户身份 + 权限点（/auth/validate）。
@@ -24,6 +16,8 @@ export async function fetchUserInfo(): Promise<UserInfo> {
     window.location.href = '/login';
     throw new Error('未认证');
   }
+  // 非 2xx（如 502/503 网关 HTML 错误页）：不满足 Result 结构，直接抛错避免 resp.json() 抛 SyntaxError 被静默吞掉
+  if (!resp.ok) throw new Error(`获取用户信息失败：HTTP ${resp.status}`);
   const body = await resp.json();
   // 后端统一 Result<T> 包装：{ code, message, data }，code !== 0 视为失败
   if (body.code !== 0) throw new Error(body.message || '获取用户信息失败');

@@ -27,20 +27,19 @@ export function AppLayout() {
   // 详情页 /apps/:id 属于「应用」菜单，选中态归一化到 /
   const selectedKey = location.pathname.startsWith('/apps') ? '/' : location.pathname;
 
-  // 用户身份缓存兜底：首次进入（或老版本登录后 localStorage 无 zhijin_user）时，
-  // 主动拉取 /auth/validate 回填 perms，避免菜单因权限点缺失全部消失。
-  // 401 会由 fetchUserInfo 内部清 token 跳登录页（RequireAuth 兜底）；其他失败静默，
-  // 下次刷新重试。userReady 触发一次重渲染，使过滤后的菜单随 perms 落位。
-  const [userReady, setUserReady] = useState(() => Boolean(userStore.get()));
+  // 用户身份缓存与当前 token 同步：挂载时无条件静默补拉一次 /auth/validate 覆盖缓存。
+  // 先用缓存值渲染菜单（无阻塞），请求返回后写回 userStore 并触发重渲染（setUserVersion），
+  // 使菜单/按钮权限反映最新角色（角色变更后下次进页面即更新）。失败静默（下次刷新重试）；
+  // 401 由 fetchUserInfo 内部清 token 跳登录页（RequireAuth 兜底）。依赖 [] 只跑一次，不循环。
+  const [, setUserVersion] = useState(0);
   useEffect(() => {
-    if (userReady) return;
     fetchUserInfo()
       .then((user) => {
         userStore.set(user);
-        setUserReady(true);
+        setUserVersion((v) => v + 1);
       })
       .catch(() => {});
-  }, [userReady]);
+  }, []);
 
   const menus = MENU_ITEMS.filter((m) => userStore.hasPerm(m.perm));
 

@@ -175,4 +175,22 @@ class RbacApplicationServiceTest {
         assertEquals(1, service.listPermissions().size)
         assertEquals("app:view", service.listPermissions()[0].permCode)
     }
+
+    @Test
+    fun `listUsers返回用户角色ID与角色名`() {
+        // 用户 u 绑定角色 id=1（管理员）、id=2（只读）；listUsers 需把 roleIds 解析为 roleNames
+        `when`(userRepository.listByTenant(1L)).thenReturn(listOf(user()))
+        `when`(roleRepository.findRoleIdsByUserId(1L, 1L)).thenReturn(listOf(1L, 2L))
+        `when`(roleRepository.listByTenant(1L)).thenReturn(
+            listOf(
+                Role(id = 1L, tenantId = 1L, roleCode = "admin", roleName = "管理员", perms = emptyList()),
+                Role(id = 2L, tenantId = 1L, roleCode = "viewer", roleName = "只读", perms = emptyList()),
+            )
+        )
+        val users = service.listUsers(1L)
+        assertEquals(1, users.size)
+        assertEquals(listOf(1L, 2L), users[0].roleIds)
+        // roleNames 按 roleIds 顺序解析，前端「当前角色」列直接渲染该字段
+        assertEquals(listOf("管理员", "只读"), users[0].roleNames)
+    }
 }

@@ -93,19 +93,26 @@ class RbacApplicationService(
         roleRepository.deleteById(tenantId, roleId)
     }
 
-    /** 用户列表（含各自角色 ID，供管理端分配角色）。 */
-    fun listUsers(tenantId: Long): List<UserWithRoles> =
-        userRepository.listByTenant(tenantId).map { user ->
+    /** 用户列表（含各自角色 ID 与角色名，供管理端分配角色）。 */
+    fun listUsers(tenantId: Long): List<UserWithRoles> {
+        // 一次加载租户下全部角色建 id→名称 映射，供每个用户解析角色名（避免每用户一次角色查询）
+        val roleNamesById = roleRepository.listByTenant(tenantId)
+            .mapNotNull { r -> r.id?.let { it to r.roleName } }
+            .toMap()
+        return userRepository.listByTenant(tenantId).map { user ->
             val userId = user.id ?: throw IllegalStateException("用户 ID 缺失: username=${user.username}")
+            val roleIds = roleRepository.findRoleIdsByUserId(tenantId, userId)
             UserWithRoles(
                 id = userId,
                 username = user.username,
                 nickname = user.nickname,
                 status = user.status,
                 orgId = user.orgId,
-                roleIds = roleRepository.findRoleIdsByUserId(tenantId, userId),
+                roleIds = roleIds,
+                roleNames = roleIds.mapNotNull { roleNamesById[it] },
             )
         }
+    }
 
     /** 重设用户绑定的角色。 */
     @Transactional

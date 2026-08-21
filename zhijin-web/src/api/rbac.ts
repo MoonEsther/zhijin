@@ -14,7 +14,7 @@ export interface RoleItem {
   roleName: string;
   perms: string[];
 }
-/** 管理端用户列表项：用户基本信息 + 已绑定的角色 ID（分配角色弹窗回显用）。 */
+/** 管理端用户列表项：用户基本信息 + 已绑定的角色 ID 与角色名（分配角色弹窗回显/当前角色列用）。 */
 export interface RbacUser {
   id: number;
   username: string;
@@ -22,6 +22,8 @@ export interface RbacUser {
   status: number; // 1=启用，其余为禁用（与后端 User.status 语义一致）
   orgId: number | null;
   roleIds: number[];
+  /** 用户当前角色名（后端 /api/rbac/users 内嵌返回，供仅有 user:manage 的管理员展示角色）。 */
+  roleNames: string[];
 }
 
 /** 角色请求体：新建/更新角色时提交（perms 为权限点编码列表）。 */

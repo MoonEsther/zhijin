@@ -175,4 +175,46 @@ class MethodSecurityIntegrationTest {
         mockMvc.perform(get("/api/apps").header("Authorization", "Bearer ${token(listOf("usage:view"))}"))
             .andExpect(status().isForbidden())
     }
+
+    @Test
+    fun `userManage权限可读用户列表且返回角色名`() {
+        // 仅 user:manage（无 role:manage）：GET /api/rbac/users 应放行，
+        // 且响应内嵌 roleNames，前端「当前角色」列不再依赖独立 roles 查询
+        val body = mockMvc.perform(
+            get("/api/rbac/users").header("Authorization", "Bearer ${token(listOf("user:manage"))}")
+        )
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.code").value(0))
+            .andReturn().response.contentAsString
+        // 每个用户条目都必须携带 roleNames 数组
+        val users: List<Map<String, Any>> = JsonPath.read(body, "$.data")
+        users.forEach { u ->
+            assertTrue(u.containsKey("roleNames"), "用户条目应包含 roleNames 字段: $u")
+            assertTrue(u["roleNames"] is List<*>, "roleNames 应为数组: $u")
+        }
+        // admin 被 AdminSeeder 绑定 admin 角色（租户 1），roleNames 应非空
+        val admin = users.first { it["username"] == "admin" }
+        assertTrue((admin["roleNames"] as List<*>).isNotEmpty(), "admin 应具备非空角色名")
+    }
+
+    @Test
+    fun `userManage权限可读角色列表供分配弹窗`() {
+        // 仅 user:manage 也允许读角色列表（用户管理「分配角色」弹窗需要角色选项）；
+        // 角色 CRUD 仍由 role:manage 专属控制
+        mockMvc.perform(get("/api/rbac/roles").header("Authorization", "Bearer ${token(listOf("user:manage"))}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.code").value(0))
+    }
+
+    @Test
+    fun `userManage权限不可创建角色`() {
+        // 角色写操作仍要求 role:manage：仅 user:manage 提交 POST /api/rbac/roles 应 403
+        mockMvc.perform(
+            post("/api/rbac/roles")
+                .header("Authorization", "Bearer ${token(listOf("user:manage"))}")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"roleCode":"hacker","roleName":"越权","perms":[]}""")
+        )
+            .andExpect(status().isForbidden())
+    }
 }

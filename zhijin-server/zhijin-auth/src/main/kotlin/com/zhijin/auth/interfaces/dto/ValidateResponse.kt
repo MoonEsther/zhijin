@@ -6,4 +6,6 @@ data class ValidateResponse(
     val userId: Long?,
     val tenantId: Long?,
     val roles: List<String>,
+    /** 用户权限点编码列表（用户角色 ∪ 组织角色），供前端菜单/按钮按 perms 过滤渲染。 */
+    val perms: List<String>,
 )

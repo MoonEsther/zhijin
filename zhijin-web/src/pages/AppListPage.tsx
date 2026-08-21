@@ -4,6 +4,7 @@ import { Button, Card, Form, Input, Modal, Popconfirm, Space, Table, Tag, Typogr
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppItem, appsApi } from '../api/apps';
+import { Perm } from '../auth/Perm';
 
 // 状态 → 标签映射：0=草稿 1=已发布 2=已下线（与后端 AppStatus.ordinal 一致）
 const STATUS_MAP: Record<number, { color: string; text: string }> = {
@@ -110,14 +111,19 @@ export function AppListPage() {
           <Button type="link" size="small" onClick={() => navigate(`/apps/${record.id}`)}>
             详情
           </Button>
-          <Button type="link" size="small" onClick={() => openEdit(record)}>
-            编辑
-          </Button>
-          <Popconfirm title="确认删除该应用？" description="删除后不可恢复" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button type="link" size="small" danger>
-              删除
+          {/* 编辑/删除按钮按权限点过滤（无权限不渲染） */}
+          <Perm perm="app:update">
+            <Button type="link" size="small" onClick={() => openEdit(record)}>
+              编辑
             </Button>
-          </Popconfirm>
+          </Perm>
+          <Perm perm="app:delete">
+            <Popconfirm title="确认删除该应用？" description="删除后不可恢复" onConfirm={() => deleteMutation.mutate(record.id)}>
+              <Button type="link" size="small" danger>
+                删除
+              </Button>
+            </Popconfirm>
+          </Perm>
         </Space>
       ),
     },
@@ -129,9 +135,12 @@ export function AppListPage() {
         <Typography.Title level={4} style={{ margin: 0 }}>
           应用列表
         </Typography.Title>
-        <Button type="primary" onClick={openCreate}>
-          新建应用
-        </Button>
+        {/* 新建应用按钮按 app:create 权限过滤 */}
+        <Perm perm="app:create">
+          <Button type="primary" onClick={openCreate}>
+            新建应用
+          </Button>
+        </Perm>
       </div>
 
       <Table

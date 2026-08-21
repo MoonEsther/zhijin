@@ -7,6 +7,8 @@ import { AppListPage } from './pages/AppListPage';
 import { AppDetailPage } from './pages/AppDetailPage';
 import { UsagePage } from './pages/UsagePage';
 import { AuditPage } from './pages/AuditPage';
+import { UserManagePage } from './pages/UserManagePage';
+import { RoleManagePage } from './pages/RoleManagePage';
 
 // 路由表：/login 与 /callback 匿名可访问；其余挂载在 RequireAuth 守卫下，未登录自动跳 /login
 export default function App() {
@@ -20,6 +22,8 @@ export default function App() {
           <Route path="/apps/:id" element={<AppDetailPage />} />
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/audit" element={<AuditPage />} />
+          <Route path="/users" element={<UserManagePage />} />
+          <Route path="/roles" element={<RoleManagePage />} />
         </Route>
       </Routes>
     </BrowserRouter>

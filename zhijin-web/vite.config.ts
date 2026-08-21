@@ -13,6 +13,7 @@ export default defineConfig({
       '/oauth2': { target: 'http://localhost:8080', changeOrigin: true },  // D2
       '/login': { target: 'http://localhost:8080', changeOrigin: true },   // D2
       '/error': { target: 'http://localhost:8080', changeOrigin: true },   // D2
+      '/auth': { target: 'http://localhost:8080', changeOrigin: true },    // R1：/auth/validate 需要代理
     },
   },
 });

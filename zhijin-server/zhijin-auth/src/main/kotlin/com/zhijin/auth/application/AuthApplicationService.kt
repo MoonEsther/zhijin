@@ -22,6 +22,9 @@ class AuthApplicationService {
             userId = (claims["uid"] as? Number)?.toLong(),
             tenantId = (claims["tenant_id"] as? Number)?.toLong(),
             roles = (claims["roles"] as? List<*>)?.map { it.toString() } ?: emptyList(),
+            // 权限点来自 tokenCustomizer 签发 JWT 时写入的 perms claim（见 SecurityConfig），
+            // 解析失败/缺失时兜底空列表，保证老 token 仍可完成 validate
+            perms = (claims["perms"] as? List<*>)?.map { it.toString() } ?: emptyList(),
         )
     }
 

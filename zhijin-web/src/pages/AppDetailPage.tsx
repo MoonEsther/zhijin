@@ -19,6 +19,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { appsApi, type ApiKeyItem, type AppVersion } from '../api/apps';
+import { Perm } from '../auth/Perm';
 import { FlowCanvas, type FlowCanvasHandle } from '../canvas/FlowCanvas';
 import { createCanvasNode, NodePalette, type PaletteItem } from '../canvas/palette';
 import { fromDsl, toDsl } from '../canvas/dsl';
@@ -162,15 +163,18 @@ export function AppDetailPage() {
       key: 'action',
       width: 100,
       render: (_, record) => (
-        <Popconfirm
-          title="确认吊销该 API Key？"
-          description="吊销后立即失效且不可恢复"
-          onConfirm={() => revokeMutation.mutate(record.id)}
-        >
-          <Button type="link" size="small" danger>
-            吊销
-          </Button>
-        </Popconfirm>
+        // 吊销按钮按 apikey:manage 权限过滤
+        <Perm perm="apikey:manage">
+          <Popconfirm
+            title="确认吊销该 API Key？"
+            description="吊销后立即失效且不可恢复"
+            onConfirm={() => revokeMutation.mutate(record.id)}
+          >
+            <Button type="link" size="small" danger>
+              吊销
+            </Button>
+          </Popconfirm>
+        </Perm>
       ),
     },
   ];
@@ -276,9 +280,12 @@ export function AppDetailPage() {
                   <Typography.Text type="secondary">
                     用于开放 API /v1 鉴权；明文仅在生成时显示一次，DB 只存哈希。
                   </Typography.Text>
-                  <Button type="primary" onClick={() => setGenOpen(true)}>
-                    生成 API Key
-                  </Button>
+                  {/* 生成 API Key 按钮按 apikey:manage 权限过滤 */}
+                  <Perm perm="apikey:manage">
+                    <Button type="primary" onClick={() => setGenOpen(true)}>
+                      生成 API Key
+                    </Button>
+                  </Perm>
                 </div>
                 {plainKey && (
                   <Alert
@@ -307,9 +314,12 @@ export function AppDetailPage() {
                   发布将固化当前版本快照（版本号自增），并把应用状态更新为「已发布」；V1 画布 DSL 仍为前端本地草稿。
                 </Typography.Paragraph>
                 <div>
-                  <Button type="primary" loading={publishMutation.isPending} onClick={() => publishMutation.mutate()}>
-                    发布
-                  </Button>
+                  {/* 发布按钮按 app:publish 权限过滤 */}
+                  <Perm perm="app:publish">
+                    <Button type="primary" loading={publishMutation.isPending} onClick={() => publishMutation.mutate()}>
+                      发布
+                    </Button>
+                  </Perm>
                 </div>
                 {publishResult && (
                   <Alert

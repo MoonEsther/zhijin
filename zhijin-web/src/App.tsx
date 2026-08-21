@@ -1,13 +1,27 @@
-import { Card, Typography } from 'antd';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AppLayout } from './components/AppLayout';
+import { RequireAuth } from './auth/RequireAuth';
+import { LoginPage } from './pages/LoginPage';
+import { CallbackPage } from './pages/CallbackPage';
+import { AppListPage } from './pages/AppListPage';
+import { AppDetailPage } from './pages/AppDetailPage';
+import { UsagePage } from './pages/UsagePage';
+import { AuditPage } from './pages/AuditPage';
 
-// V1 空壳：控制台占位页。应用管理、画布编排在计划 D 实现。
+// 路由表：/login 与 /callback 匿名可访问；其余挂载在 RequireAuth 守卫下，未登录自动跳 /login
 export default function App() {
   return (
-    <Card style={{ maxWidth: 640, margin: '80px auto' }}>
-      <Typography.Title level={3}>织锦 · zhijin 控制台</Typography.Title>
-      <Typography.Paragraph>
-        企业级智能体平台。V1 脚手架占位，应用管理与编排画布即将上线。
-      </Typography.Paragraph>
-    </Card>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/callback" element={<CallbackPage />} />
+        <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
+          <Route path="/" element={<AppListPage />} />
+          <Route path="/apps/:id" element={<AppDetailPage />} />
+          <Route path="/usage" element={<UsagePage />} />
+          <Route path="/audit" element={<AuditPage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }

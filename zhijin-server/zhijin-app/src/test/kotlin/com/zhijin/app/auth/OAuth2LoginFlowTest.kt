@@ -34,6 +34,7 @@ import java.util.Base64
  * 1) 表单登录：验证 Spring Security 表单登录 + UserDetailsServiceImpl + BCrypt 用户校验（链3）
  * 2) 客户端凭证模式：验证授权服务器 /oauth2/token 签发 JWT，且 iss 与 AUTH_ISSUER 默认值一致
  * 3) 完整授权码流程（PKCE）：表单登录 → /oauth2/authorize 签发 code → /oauth2/token 换取 access_token
+ *    （zhijin-console 公共客户端，无 secret，D1：token 请求仅表单 client_id + code_verifier）
  *
  * 说明：admin/admin123 正常由 AdminSeeder 在启动时幂等创建，这里用 SysUserMapper 兜底确保存在。
  */
@@ -154,7 +155,9 @@ class OAuth2LoginFlowTest {
         val code = UriComponentsBuilder.fromUriString(location!!).build().queryParams.getFirst("code")
         assertNotNull(code)
 
-        // 3) 用授权码 + code_verifier 换取 access_token
+        // 3) 用授权码 + code_verifier 换取 access_token。
+        //    D1：zhijin-console 为公共客户端（clientAuthenticationMethod=NONE），
+        //    不带 Authorization Basic 头，仅表单提交 client_id + code_verifier（PKCE）。
         val tokenResult = mockMvc.perform(
             post("/oauth2/token")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
@@ -163,7 +166,6 @@ class OAuth2LoginFlowTest {
                 .param("redirect_uri", "http://localhost:5173/callback")
                 .param("client_id", "zhijin-console")
                 .param("code_verifier", verifier)
-                .with(httpBasic("zhijin-console", "console-secret"))
         )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.access_token").isNotEmpty)

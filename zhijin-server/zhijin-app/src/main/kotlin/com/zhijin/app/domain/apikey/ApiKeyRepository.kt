@@ -18,4 +18,7 @@ interface ApiKeyRepository {
 
     /** 按租户+应用+哈希查询启用态 Key（校验用）；不存在或已吊销返回 null。 */
     fun findActiveByHash(tenantId: Long, appId: Long, hash: String): AppApiKey?
+
+    /** 按租户+应用列出全部 API Key（列表页数据源；V1 不做分页）。 */
+    fun findByTenantAndApp(tenantId: Long, appId: Long): List<AppApiKey>
 }

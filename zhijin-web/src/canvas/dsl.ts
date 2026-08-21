@@ -22,6 +22,9 @@ export function fromDsl(dsl: { nodes: {id: string; type: string; config?: Record
   const nodes = dsl.nodes.map((n, i) => ({
     id: n.id,
     position: { x: 100 + i * 200, y: 100 },
+    // 顶层 type 必须带上：React Flow 依据 node.type 匹配 nodeTypes 决定渲染哪个自定义节点组件；
+    // data.type 仅用于 toDsl 序列化识别，二者缺一不可。
+    type: n.type as keyof typeof NODE_TYPE_MAP,
     data: { label: n.config?.label ?? n.type, type: n.type } as FlowNodeData,
   }));
   const edges = dsl.edges.map((e, i) => ({ id: `e${i}`, source: e.from, target: e.to }));

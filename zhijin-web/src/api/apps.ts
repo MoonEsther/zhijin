@@ -19,6 +19,12 @@ export interface ApiKeyResult {
   plainKey: string;
   name: string;
 }
+// API Key 列表项：不含明文（明文仅生成时返回一次，DB 只存哈希，不可恢复）
+export interface ApiKeyItem {
+  id: number;
+  name: string;
+  createTime?: string;
+}
 
 /** 应用资源 API（/api/apps，request 已解包 Result<T> 拿到 data）。 */
 export const appsApi = {
@@ -32,4 +38,8 @@ export const appsApi = {
   publish: (id: number) => request<AppVersion>(`/apps/${id}/publish`, { method: 'POST' }),
   generateApiKey: (id: number, name: string) =>
     request<ApiKeyResult>(`/apps/${id}/api-keys?name=${encodeURIComponent(name)}`, { method: 'POST' }),
+  /** 列出应用下全部 API Key（T3 后端新增 GET /api/apps/{id}/api-keys，不含明文）。 */
+  listApiKeys: (id: number) => request<ApiKeyItem[]>(`/apps/${id}/api-keys`),
+  revokeApiKey: (id: number, keyId: number) =>
+    request<void>(`/apps/${id}/api-keys/${keyId}`, { method: 'DELETE' }),
 };

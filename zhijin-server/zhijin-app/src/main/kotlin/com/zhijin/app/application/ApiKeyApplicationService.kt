@@ -51,6 +51,14 @@ class ApiKeyApplicationService(
         )
     }
 
+    /**
+     * 按租户+应用列出 API Key（详情页列表数据源）。
+     * 只返回 id/name/createTime；明文不可恢复故不返回，plainKey 一律置空。
+     */
+    fun list(tenantId: Long, appId: Long): List<ApiKeyResponse> =
+        apiKeyRepository.findByTenantAndApp(tenantId, appId)
+            .map { ApiKeyResponse(id = it.id!!, plainKey = "", name = it.name, createTime = it.createTime) }
+
     /** 校验 API Key（供开放 API 鉴权用）：仅当哈希命中且 status=1 时通过。 */
     fun verify(tenantId: Long, appId: Long, plainKey: String): Boolean =
         apiKeyRepository.findActiveByHash(tenantId, appId, sha256(plainKey)) != null

@@ -24,13 +24,13 @@ data class AppApiKeyRecord(
 ) {
     fun toDomain(): AppApiKey = AppApiKey(
         id = id, tenantId = tenantId!!, appId = appId!!, keyHash = keyHash,
-        name = name, status = status,
+        name = name, status = status, createTime = createTime,
     )
 
     companion object {
         fun from(key: AppApiKey): AppApiKeyRecord = AppApiKeyRecord(
             id = key.id, tenantId = key.tenantId, appId = key.appId, keyHash = key.keyHash,
-            name = key.name, status = key.status,
+            name = key.name, status = key.status, createTime = key.createTime,
         )
     }
 }

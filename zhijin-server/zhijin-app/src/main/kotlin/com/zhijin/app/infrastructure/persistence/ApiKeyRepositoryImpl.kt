@@ -31,4 +31,13 @@ class ApiKeyRepositoryImpl(private val keyMapper: AppApiKeyMapper) : ApiKeyRepos
             QueryWrapper<AppApiKeyRecord>()
                 .eq("tenant_id", tenantId).eq("app_id", appId).eq("key_hash", hash)
         )?.toDomain()?.takeIf { it.isActive() }
+
+    /**
+     * 列出某应用的 API Key：显式加 tenant_id 条件与租户拦截器自动附加的过滤叠加（AND 语义），
+     * 保证即使该表被加入拦截器忽略清单也不会出现跨租户泄露。
+     */
+    override fun findByTenantAndApp(tenantId: Long, appId: Long): List<AppApiKey> =
+        keyMapper.selectList(
+            QueryWrapper<AppApiKeyRecord>().eq("tenant_id", tenantId).eq("app_id", appId)
+        ).map { it.toDomain() }
 }
